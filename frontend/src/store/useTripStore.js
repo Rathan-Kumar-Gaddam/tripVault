@@ -64,6 +64,14 @@ const useTripStore = create((set, get) => ({
     const { data } = await api.post('/trips', tripData);
     set((state) => ({ trips: [...state.trips, data] }));
   },
+  
+  deleteTrip: async (tripId) => {
+    await api.delete(`/trips/${tripId}`);
+    // Instantly remove the trip from the frontend state
+    set((state) => ({ 
+      trips: state.trips.filter((trip) => trip._id !== tripId) 
+    }));
+  },
 
   fetchTripDetails: async (tripId) => {
     set({ isLoading: true });

@@ -1,7 +1,7 @@
 import Trip from '../models/Trip.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
-
+import Transaction from '../models/Transaction.js';
 // @desc    Create a new trip (User becomes Admin)
 // @route   POST /api/trips
 export const createTrip = async (req, res) => {
@@ -114,6 +114,38 @@ export const getTransactions = async (req, res) => {
       .sort({ createdAt: -1 }); 
 
     res.json(transactions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+// @desc    Admin deletes a trip and all its transactions
+// @route   DELETE /api/trips/:tripId
+export const deleteTrip = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const requesterId = req.user._id;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) return res.status(404).json({ message: 'Trip not found' });
+
+    // Validate Requester is Admin
+    const isAdmin = trip.members.some(
+      (m) => m.user.toString() === requesterId.toString() && m.role === 'admin'
+    );
+    
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Only admins can delete this trip.' });
+    }
+
+    // 1. Delete all transactions associated with this trip
+    await Transaction.deleteMany({ tripId });
+
+    // 2. Delete the trip itself
+    await trip.deleteOne();
+
+    res.status(200).json({ message: 'Trip deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

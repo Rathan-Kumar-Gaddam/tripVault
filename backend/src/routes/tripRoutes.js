@@ -1,5 +1,5 @@
 import express from 'express';
-import { createTrip, addMember, getTripById, getUserTrips } from '../controllers/tripController.js';
+import { createTrip, addMember, getTripById, getUserTrips,deleteTrip } from '../controllers/tripController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -9,7 +9,8 @@ router.route('/')
   .get(protect, getUserTrips);
 
 router.route('/:tripId')
-  .get(protect, getTripById);
+  .get(protect, getTripById)
+  .delete(protect, deleteTrip);
 
 router.route('/:tripId/members')
   .post(protect, addMember);
