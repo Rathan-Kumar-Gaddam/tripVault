@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import useTripStore from './store/useTripStore';
 import BottomNav from './components/BottomNav';
 import Auth from './pages/Auth';
@@ -39,6 +40,14 @@ function App() {
           <Route path="/trip/:id/*" element={<BottomNav />} />
         </Routes>
       </div>
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          style: {
+            zIndex: 9999,
+          },
+        }}
+      />
     </BrowserRouter>
   );
 }
