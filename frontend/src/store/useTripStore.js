@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api', // Match your backend port
+  baseURL: 'https://tripvault-fddi.onrender.com/api', // Match your backend port
 });
 
 // Automatically attach JWT token to every request
