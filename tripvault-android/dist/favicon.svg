@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Background Gradient: Deep Luxury Slate -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <!-- Electric Indigo Accent Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#4338CA" />
+    </linearGradient>
+
+    <!-- Flight Delta Pure Gradient -->
+    <linearGradient id="deltaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </linearGradient>
+
+    <!-- Emerald Security Core -->
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <!-- Precision Drop Shadow -->
+    <filter id="proShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#4F46E5" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Base App Tile with Subtle Bezel -->
+  <rect width="512" height="512" rx="120" fill="url(#bgGrad)" />
+  <rect x="2" y="2" width="508" height="508" rx="118" stroke="rgba(255,255,255,0.08)" stroke-width="4" fill="none" />
+
+  <!-- The Professional TripVault Emblem -->
+  <g filter="url(#proShadow)">
+    
+    <!-- Left Wing / Vault Arch: Electric Indigo Shield -->
+    <path 
+      d="M140 160 C140 148.954 148.954 140 160 140 H200 C207.242 140 213.916 143.918 217.432 150.248 L256 220 L294.568 150.248 C298.084 143.918 304.758 140 312 140 H352 C363.046 140 372 148.954 372 160 C372 164.242 370.655 168.361 368.163 171.764 L276.163 297.764 C267.087 310.201 244.913 310.201 235.837 297.764 L143.837 171.764 C141.345 168.361 140 164.242 140 160 Z" 
+      fill="url(#accentGrad)" 
+    />
+
+    <!-- Main Delta Flight Arrow / Supersonic Jet Wing: Pure White & Silver -->
+    <path 
+      d="M256 120 L400 370 C405.523 379.565 397.697 392 386.602 392 H328 C320.198 392 313.136 387.492 309.845 380.372 L256 264 L202.155 380.372 C198.864 387.492 191.802 392 183.998 392 H125.398 C114.303 392 106.477 379.565 112 370 L256 120 Z" 
+      fill="url(#deltaGrad)" 
+    />
+
+    <!-- Vault Core Security Keyhole / Node -->
+    <circle cx="256" cy="256" r="26" fill="#0F172A" stroke="url(#accentGrad)" stroke-width="8" />
+    <circle cx="256" cy="256" r="10" fill="url(#emeraldGrad)" />
+
+  </g>
+</svg>

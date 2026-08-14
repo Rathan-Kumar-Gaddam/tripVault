@@ -14,11 +14,122 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * Calculates exact peer-to-peer debts between all pairs of members
+ * and produces personalized breakdowns for the logged-in user.
+ */
+export const computeBilateralDebts = (members = [], transactions = [], currentUserId = null) => {
+  const memberList = members || [];
+  const memberMap = {};
+  memberList.forEach((m) => {
+    const u = m.user || m;
+    const uid = (u._id || u.id || u).toString();
+    memberMap[uid] = u;
+  });
+
+  // debts[debtorId][payerId] = total amount debtor owes payer
+  const debts = {};
+  const userIds = Object.keys(memberMap);
+
+  userIds.forEach((u1) => {
+    debts[u1] = {};
+    userIds.forEach((u2) => {
+      debts[u1][u2] = 0;
+    });
+  });
+
+  (transactions || []).forEach((tx) => {
+    const payerId = (tx.payer?._id || tx.payer || tx.createdBy?._id || tx.createdBy)?.toString();
+    if (!payerId) return;
+
+    // Get splits
+    const splits = (tx.splits && tx.splits.length > 0)
+      ? tx.splits
+      : (tx.sharedBy || []).map((u) => ({
+          user: u,
+          amount: (tx.amount || 0) / (tx.sharedBy.length || 1),
+        }));
+
+    splits.forEach((split) => {
+      const debtorId = (split.user?._id || split.user)?.toString();
+      const amount = Number(split.amount) || 0;
+      if (!debtorId || debtorId === payerId) return;
+
+      if (!debts[debtorId]) debts[debtorId] = {};
+      debts[debtorId][payerId] = (debts[debtorId][payerId] || 0) + amount;
+    });
+  });
+
+  // Calculate bilateral balance for current user
+  let totalYouAreOwed = 0;
+  let totalYouOwe = 0;
+  const companionDebts = [];
+
+  if (currentUserId) {
+    const myId = currentUserId.toString();
+
+    userIds.forEach((otherId) => {
+      if (otherId === myId) return;
+      const otherUser = memberMap[otherId];
+
+      const otherOwesMe = debts[otherId]?.[myId] || 0;
+      const iOweOther = debts[myId]?.[otherId] || 0;
+      const net = Math.round((otherOwesMe - iOweOther) * 100) / 100;
+
+      if (net > 0) {
+        totalYouAreOwed += net;
+        companionDebts.push({
+          user: otherUser,
+          amount: net,
+          status: 'owes_you', // "Rathan owes you ₹500"
+          net: net,
+        });
+      } else if (net < 0) {
+        const absVal = Math.abs(net);
+        totalYouOwe += absVal;
+        companionDebts.push({
+          user: otherUser,
+          amount: absVal,
+          status: 'you_owe', // "You owe Priya ₹250"
+          net: net,
+        });
+      } else {
+        companionDebts.push({
+          user: otherUser,
+          amount: 0,
+          status: 'settled', // "Settled up"
+          net: 0,
+        });
+      }
+    });
+  }
+
+  // Sort companion debts: you owe first (requiring action), then owes you, then settled
+  companionDebts.sort((a, b) => {
+    const order = { you_owe: 0, owes_you: 1, settled: 2 };
+    if (order[a.status] !== order[b.status]) {
+      return order[a.status] - order[b.status];
+    }
+    return b.amount - a.amount;
+  });
+
+  const netPosition = Math.round((totalYouAreOwed - totalYouOwe) * 100) / 100;
+
+  return {
+    totalYouAreOwed: Math.round(totalYouAreOwed * 100) / 100,
+    totalYouOwe: Math.round(totalYouOwe * 100) / 100,
+    netPosition,
+    companionDebts,
+    debts,
+  };
+};
+
 const useTripStore = create((set, get) => ({
   user: JSON.parse(localStorage.getItem('user')) || null,
   trips: [],
   currentTrip: null,
   transactions: [],
+  fundRequests: [],
   isLoading: false,
   error: null,
 
@@ -91,7 +202,7 @@ const useTripStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    set({ user: null, trips: [], currentTrip: null, transactions: [] });
+    set({ user: null, trips: [], currentTrip: null, transactions: [], fundRequests: [] });
   },
 
   // Trips & Balances
@@ -108,7 +219,6 @@ const useTripStore = create((set, get) => ({
   
   deleteTrip: async (tripId) => {
     await api.delete(`/trips/${tripId}`);
-    // Instantly remove the trip from the frontend state
     set((state) => ({ 
       trips: state.trips.filter((trip) => trip._id !== tripId) 
     }));
@@ -116,12 +226,25 @@ const useTripStore = create((set, get) => ({
 
   fetchTripDetails: async (tripId) => {
     set({ isLoading: true });
-    const { data: tripData } = await api.get(`/trips/${tripId}`);
-    const { data: txData } = await api.get(`/transactions/${tripId}`);
-    set({ currentTrip: tripData, transactions: txData, isLoading: false });
+    try {
+      const [tripRes, txRes, reqRes] = await Promise.all([
+        api.get(`/trips/${tripId}`),
+        api.get(`/transactions/${tripId}`),
+        api.get(`/requests/trip/${tripId}`).catch(() => ({ data: [] })),
+      ]);
+      set({ 
+        currentTrip: tripRes.data, 
+        transactions: txRes.data, 
+        fundRequests: reqRes.data || [], 
+        isLoading: false 
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
   },
 
-  // Admin Actions
+  // Member Management
   addMember: async (tripId, memberData) => {
     await api.post(`/trips/${tripId}/members`, memberData);
     await get().fetchTripDetails(tripId); // Refresh balances
@@ -132,9 +255,41 @@ const useTripStore = create((set, get) => ({
     await get().fetchTripDetails(tripId); // Refresh balances
   },
 
+  // Transaction Actions (Available to any member)
   logTransaction: async (txData) => {
-    await api.post('/transactions', txData);
+    const { data } = await api.post('/transactions', txData);
     await get().fetchTripDetails(txData.tripId); // Refresh balances instantly
+    return data;
+  },
+
+  deleteTransaction: async (txId, tripId) => {
+    await api.delete(`/transactions/${txId}`);
+    await get().fetchTripDetails(tripId); // Refresh balances instantly
+  },
+
+  // Fund Request Actions (Companion Borrowing)
+  fetchTripRequests: async (tripId) => {
+    const { data } = await api.get(`/requests/trip/${tripId}`);
+    set({ fundRequests: data });
+    return data;
+  },
+
+  createFundRequest: async (requestData) => {
+    const { data } = await api.post('/requests', requestData);
+    await get().fetchTripDetails(requestData.tripId);
+    return data;
+  },
+
+  respondToFundRequest: async (requestId, action, tripId) => {
+    const { data } = await api.put(`/requests/${requestId}/respond`, { action });
+    await get().fetchTripDetails(tripId);
+    return data;
+  },
+
+  cancelFundRequest: async (requestId, tripId) => {
+    const { data } = await api.delete(`/requests/${requestId}`);
+    await get().fetchTripDetails(tripId);
+    return data;
   },
 }));
 

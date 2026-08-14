@@ -8,6 +8,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import tripRoutes from './routes/tripRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
+import requestRoutes from './routes/requestRoutes.js';
 
 dotenv.config({ path: new URL('../.env', import.meta.url) });
 
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/requests', requestRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
