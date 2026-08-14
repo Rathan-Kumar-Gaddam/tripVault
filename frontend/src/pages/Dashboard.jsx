@@ -230,7 +230,7 @@ export default function Dashboard() {
             )}
           </div>
           <p className="text-slate-500 text-xs font-semibold">
-            Trip Spend: <strong className="text-slate-900 font-bold">{currency}{totalTripSpend.toFixed(2)}</strong>
+            Trip Spend: <strong className="text-rose-600 font-bold">-{currency}{totalTripSpend.toFixed(2)}</strong>
             <span className="mx-1.5 text-slate-300">•</span>
             <span>{totalTransactionsCount} {totalTransactionsCount === 1 ? 'activity' : 'activities'}</span>
           </p>
@@ -613,7 +613,7 @@ export default function Dashboard() {
 
                 <div className="text-right shrink-0">
                   <div className={`font-black text-xs tracking-tight font-heading ${
-                    balance > 0.01 ? 'text-emerald-600' : (balance < -0.01 ? 'text-slate-900' : 'text-slate-400')
+                    balance > 0.01 ? 'text-emerald-600' : (balance < -0.01 ? 'text-rose-600' : 'text-slate-400')
                   }`}>
                     {balance > 0.01 ? '+' : ''}{currency}{balance.toFixed(2)}
                   </div>

@@ -118,8 +118,8 @@ export default function History() {
       <div className="grid grid-cols-2 gap-3 mb-6">
         <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Total Expenses</p>
-          <p className="text-lg font-black text-slate-900 font-heading">
-            {currency}{totalSpent.toFixed(2)}
+          <p className="text-lg font-black text-rose-600 font-heading">
+            -{currency}{totalSpent.toFixed(2)}
           </p>
         </div>
         <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm">
@@ -220,9 +220,9 @@ export default function History() {
                   <div className="flex justify-between items-start mb-1 gap-2">
                     <h3 className="font-bold text-slate-900 text-sm truncate">{tx.description}</h3>
                     <span className={`font-black text-sm whitespace-nowrap font-heading ${
-                      isSettlement ? 'text-emerald-600' : 'text-slate-900'
+                      isSettlement ? 'text-emerald-600' : 'text-rose-600'
                     }`}>
-                      {currency}{tx.amount.toFixed(2)}
+                      {isSettlement ? '+' : '-'}{currency}{tx.amount.toFixed(2)}
                     </span>
                   </div>
                   
