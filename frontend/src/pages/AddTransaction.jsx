@@ -397,6 +397,7 @@ export default function AddTransaction() {
                   type="number" 
                   step="0.01" 
                   min="0.01" 
+                  inputMode="decimal"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00" 
@@ -418,6 +419,15 @@ export default function AddTransaction() {
                     +{currency}{q}
                   </button>
                 ))}
+                {numericAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAmount('')}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-400 active:scale-95 transition-all"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
 
@@ -701,6 +711,7 @@ export default function AddTransaction() {
                   type="number" 
                   step="0.01" 
                   min="0.01" 
+                  inputMode="decimal"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00" 
@@ -722,6 +733,15 @@ export default function AddTransaction() {
                     +{currency}{q}
                   </button>
                 ))}
+                {numericAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAmount('')}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-400 active:scale-95 transition-all"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
 
@@ -762,10 +782,10 @@ export default function AddTransaction() {
                 type="text" 
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g. Out of cash for jet ski tickets / lunch bill" 
+                placeholder="e.g. Scuba diving ticket / lunch cash" 
                 required 
                 disabled={isSubmitting}
-                className="w-full p-4 font-medium text-sm rounded-2xl bg-white border border-slate-200 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
+                className="w-full p-4 bg-white border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all shadow-sm" 
               />
             </div>
 
@@ -817,18 +837,17 @@ export default function AddTransaction() {
 
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Paid To Whom? (Receiver)
+                    Who is Receiving? (Receiver to approve)
                   </label>
                   <select 
                     value={settleRecipient}
                     onChange={(e) => setSettleRecipient(e.target.value)}
-                    className="w-full p-3.5 font-bold text-xs rounded-xl bg-emerald-50/60 border border-emerald-200 text-emerald-950 outline-none focus:border-emerald-500"
+                    className="w-full p-3.5 font-bold text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-emerald-500"
                   >
                     <option value="">Select Receiver...</option>
                     {members.map((m) => {
                       const mUser = m.user || m;
                       const uid = mUser?._id || mUser;
-                      if (uid === settlePayer) return null; // Don't allow self settlement
                       return (
                         <option key={uid} value={uid}>
                           {mUser?.name} {uid === user?._id ? '(You)' : ''}
@@ -853,6 +872,7 @@ export default function AddTransaction() {
                   type="number" 
                   step="0.01" 
                   min="0.01" 
+                  inputMode="decimal"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00" 
@@ -874,6 +894,15 @@ export default function AddTransaction() {
                     +{currency}{q}
                   </button>
                 ))}
+                {numericAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAmount('')}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-400 active:scale-95 transition-all"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
 

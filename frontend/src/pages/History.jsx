@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ArrowLeft,
   ArrowDownRight, 
@@ -19,7 +19,10 @@ import {
   FileSpreadsheet,
   MoreVertical,
   UserCheck,
-  CreditCard
+  CreditCard,
+  X,
+  SlidersHorizontal,
+  ChevronRight
 } from 'lucide-react';
 import useTripStore, { computeBilateralDebts } from '../store/useTripStore';
 import toast from 'react-hot-toast';
@@ -30,17 +33,32 @@ import {
   printPersonalExpenseReport,
   computeUserShare 
 } from '../utils/exportUtils';
+import { HistorySkeleton } from '../components/SkeletonLoader';
+import TransactionDetailModal from '../components/TransactionDetailModal';
+
+const CATEGORY_LIST = [
+  'All',
+  'Food & Dining',
+  'Transport & Fuel',
+  'Stay & Hotels',
+  'Activities & Fun',
+  'Shopping',
+  'Snacks & Drinks',
+  'Settlement',
+];
 
 export default function History() {
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, currentTrip, transactions, fetchTripDetails, deleteTransaction, isLoading } = useTripStore();
   
+  const initialCategory = searchParams.get('category') || 'All';
   const [filterType, setFilterType] = useState('all'); // 'all' | 'my_share' | 'paid_by_me' | 'settlement'
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [searchQuery, setSearchQuery] = useState('');
-  const [deletingId, setDeletingId] = useState(null);
-  const [txToDelete, setTxToDelete] = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [selectedTx, setSelectedTx] = useState(null);
 
   useEffect(() => {
     if (!currentTrip || currentTrip._id !== id) {
@@ -48,13 +66,15 @@ export default function History() {
     }
   }, [id]);
 
+  useEffect(() => {
+    const cat = searchParams.get('category');
+    if (cat) {
+      setSelectedCategory(cat);
+    }
+  }, [searchParams]);
+
   if (isLoading || !currentTrip) {
-    return (
-      <div className="p-10 flex flex-col items-center justify-center h-full text-slate-400 gap-3 min-h-[50vh]">
-        <div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
-        <p className="font-semibold text-xs animate-pulse">Loading transaction history...</p>
-      </div>
-    );
+    return <HistorySkeleton />;
   }
 
   const currency = currentTrip.currency || '₹';
@@ -111,18 +131,12 @@ export default function History() {
     }
   };
 
-  const handleConfirmDelete = async () => {
-    if (!txToDelete || deletingId) return;
-
+  const handleDeleteTransaction = async (txId) => {
     try {
-      setDeletingId(txToDelete._id);
-      await deleteTransaction(txToDelete._id, id);
+      await deleteTransaction(txId, id);
       toast.success('Transaction removed & balances updated 🗑️');
-      setTxToDelete(null);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to delete transaction.');
-    } finally {
-      setDeletingId(null);
     }
   };
 
@@ -137,12 +151,21 @@ export default function History() {
     else if (filterType === 'paid_by_me') matchesType = isPaidByMe;
     else if (filterType === 'settlement') matchesType = tx.type === 'settlement';
 
+    let matchesCategory = true;
+    if (selectedCategory !== 'All') {
+      if (selectedCategory === 'Settlement') {
+        matchesCategory = tx.type === 'settlement';
+      } else {
+        matchesCategory = tx.category === selectedCategory;
+      }
+    }
+
     const matchesSearch = !searchQuery.trim() || 
-      tx.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tx.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.payer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.category?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesType && matchesSearch;
+    return matchesType && matchesCategory && matchesSearch;
   });
 
   // Calculate totals
@@ -259,8 +282,16 @@ export default function History() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by title, payer, or category..."
-            className="w-full p-3.5 pl-11 bg-white border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
+            className="w-full p-3.5 pl-11 pr-10 bg-white border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         {/* Filter Pills */}
@@ -298,6 +329,23 @@ export default function History() {
             Settled
           </button>
         </div>
+
+        {/* Category Horizontal Filter Chips */}
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          {CATEGORY_LIST.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-bold whitespace-nowrap active:scale-95 transition-all ${
+                selectedCategory === cat
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/25'
+                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Timeline List */}
@@ -325,10 +373,11 @@ export default function History() {
             return (
               <div 
                 key={tx._id} 
-                className="bg-white p-4 rounded-3xl border border-slate-100/80 shadow-sm flex items-start gap-3.5 hover:border-slate-200 transition-all"
+                onClick={() => setSelectedTx(tx)}
+                className="bg-white p-4 rounded-3xl border border-slate-100/80 shadow-sm flex items-start gap-3.5 hover:border-indigo-300 cursor-pointer active:scale-95 transition-all group"
               >
                 {/* Icon Indicator */}
-                <div className={`p-3 rounded-2xl shrink-0 mt-0.5 ${
+                <div className={`p-3 rounded-2xl shrink-0 mt-0.5 group-hover:scale-105 transition-transform ${
                   isSettlement 
                     ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' 
                     : 'bg-rose-50 text-rose-500 border border-rose-100'
@@ -339,7 +388,7 @@ export default function History() {
                 {/* Details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start mb-1 gap-2">
-                    <h3 className="font-bold text-slate-900 text-sm truncate">{tx.description}</h3>
+                    <h3 className="font-bold text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">{tx.description}</h3>
                     <span className={`font-black text-sm whitespace-nowrap font-heading ${
                       isSettlement ? 'text-emerald-600' : 'text-rose-600'
                     }`}>
@@ -378,19 +427,9 @@ export default function History() {
                         )}
                       </div>
 
-                      {canDelete && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTxToDelete(tx);
-                          }}
-                          disabled={deletingId === tx._id}
-                          className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
-                          title="Delete transaction"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      <span className="text-[10px] font-bold text-indigo-600 group-hover:underline">
+                        Details →
+                      </span>
                     </div>
 
                     {/* Split Type Badge & Per-Person Breakdown */}
@@ -457,54 +496,16 @@ export default function History() {
         </div>
       )}
 
-      {/* ===================== DELETE TRANSACTION CONFIRMATION MODAL ===================== */}
-      {txToDelete && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
-            <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-rose-100">
-              <Trash2 size={26} />
-            </div>
-            
-            <h3 className="text-lg font-bold text-center text-slate-900 mb-1 font-heading">
-              Delete Transaction?
-            </h3>
-            
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 my-4 text-center">
-              <p className="font-extrabold text-slate-900 text-sm truncate">{txToDelete.description}</p>
-              <p className="text-base font-black text-rose-600 mt-0.5 font-heading">
-                {currency}{txToDelete.amount.toFixed(2)}
-              </p>
-              <p className="text-[11px] text-slate-400 font-semibold mt-1">
-                Paid by {txToDelete.payer?.name || txToDelete.createdBy?.name || 'Member'}
-              </p>
-            </div>
-
-            <p className="text-xs text-center text-slate-500 mb-6">
-              This will permanently remove this transaction and automatically recalculate all member balances.
-            </p>
-
-            <div className="flex gap-3">
-              <button 
-                type="button"
-                onClick={() => setTxToDelete(null)}
-                disabled={Boolean(deletingId)}
-                className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button 
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={Boolean(deletingId)}
-                className="flex-1 py-3.5 bg-rose-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-rose-600/25 hover:bg-rose-700 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                <Trash2 size={14} />
-                <span>{deletingId ? 'Deleting...' : 'Delete'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Transaction Detail Sheet Modal */}
+      <TransactionDetailModal
+        transaction={selectedTx}
+        isOpen={!!selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onDelete={handleDeleteTransaction}
+        currency={currency}
+        currentUser={user}
+        isAdmin={isAdmin}
+      />
     </div>
   );
 }

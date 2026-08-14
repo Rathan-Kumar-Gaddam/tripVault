@@ -11,11 +11,14 @@ import {
   Wallet, 
   Users, 
   ArrowRight,
-  Sparkles,
+  Sparkles, 
   Plane,
-  X
+  X,
+  RefreshCw,
+  Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { TripListSkeleton } from '../components/SkeletonLoader';
 
 const PRESET_DESTINATIONS = [
   { name: '🏖️ Goa Beach', currency: '₹' },
@@ -30,7 +33,9 @@ export default function TripsList() {
   const [showForm, setShowForm] = useState(false);
   const [tripName, setTripName] = useState('');
   const [currency, setCurrency] = useState('₹');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [tripToDelete, setTripToDelete] = useState(null); 
   const [isDeleting, setIsDeleting] = useState(false); 
   const navigate = useNavigate();
@@ -38,6 +43,18 @@ export default function TripsList() {
   useEffect(() => {
     fetchTrips();
   }, []);
+
+  const handleRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      await fetchTrips();
+      toast.success('Trips synchronized! 🔄');
+    } catch (e) {
+      toast.error('Failed to sync trips.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -80,6 +97,14 @@ export default function TripsList() {
   const totalVaultBalance = trips.reduce((acc, t) => acc + (t.totalVault || 0), 0);
   const totalCompanions = trips.reduce((acc, t) => acc + (t.members?.length || 0), 0);
 
+  const filteredTrips = trips.filter(t => 
+    !searchQuery.trim() || t.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (isLoading && trips.length === 0) {
+    return <TripListSkeleton />;
+  }
+
   return (
     <div className="p-6 pb-24">
       
@@ -106,17 +131,29 @@ export default function TripsList() {
           </div>
         </div>
 
-        <button 
-          onClick={() => navigate('/profile')} 
-          title="Profile & Settings" 
-          className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-all"
-        >
-          <Settings size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-indigo-600 shadow-sm active:scale-90 transition-all disabled:opacity-50"
+            title="Sync Trips"
+          >
+            <RefreshCw size={18} className={isRefreshing ? 'animate-spin text-indigo-600' : ''} />
+          </button>
+
+          <button 
+            onClick={() => navigate('/profile')} 
+            title="Profile & Settings" 
+            className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-all"
+          >
+            <Settings size={18} />
+          </button>
+        </div>
       </header>
 
       {/* Portfolio Quick Overview Banner */}
-      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-[2rem] p-5 mb-7 shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-[2rem] p-5 mb-6 shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden">
         <div className="absolute -right-8 -top-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none"></div>
         
         <div className="flex justify-between items-start mb-4">
@@ -142,6 +179,28 @@ export default function TripsList() {
           </div>
         </div>
       </div>
+
+      {/* Instant Search Bar if multiple trips exist */}
+      {trips.length > 2 && (
+        <div className="relative mb-4">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search trips by destination name..."
+            className="w-full p-3 pl-11 pr-10 bg-white border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Create Trip Expandable / Action */}
       {!showForm ? (
@@ -218,7 +277,7 @@ export default function TripsList() {
               type="button" 
               onClick={() => setShowForm(false)} 
               disabled={isCreating}
-              className="flex-1 py-3 text-slate-600 font-bold text-sm bg-slate-100 rounded-xl hover:bg-slate-200 transition active:scale-95"
+              className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold text-sm rounded-xl hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
             >
               Cancel
             </button>
@@ -235,29 +294,28 @@ export default function TripsList() {
 
       {/* Trips Cards List */}
       <div className="flex flex-col gap-4">
-        {isLoading && trips.length === 0 ? (
-          <div className="p-10 text-center text-slate-400 flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
-            <p className="text-xs font-semibold animate-pulse">Loading your vaults...</p>
-          </div>
-        ) : trips.length === 0 ? (
+        {filteredTrips.length === 0 ? (
           <div className="bg-white border border-slate-200/80 rounded-[2rem] p-8 text-center shadow-sm mt-4">
             <div className="w-16 h-16 rounded-3xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4">
               <Compass size={32} />
             </div>
-            <h3 className="font-bold text-slate-900 text-lg mb-1 font-heading">No Trips Found</h3>
+            <h3 className="font-bold text-slate-900 text-lg mb-1 font-heading">
+              {searchQuery ? 'No Trips Found' : 'No Trips Created Yet'}
+            </h3>
             <p className="text-xs text-slate-500 max-w-xs mx-auto mb-6">
-              Create your first group trip or ask your travel organizer to add you by phone number.
+              {searchQuery ? `No trip matching "${searchQuery}".` : 'Create your first group trip or ask your travel organizer to add you by phone number.'}
             </p>
-            <button 
-              onClick={() => setShowForm(true)} 
-              className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-indigo-600/25 active:scale-95 transition-all"
-            >
-              + Create First Trip
-            </button>
+            {!searchQuery && (
+              <button 
+                onClick={() => setShowForm(true)} 
+                className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-xs shadow-md shadow-indigo-600/25 active:scale-95 transition-all"
+              >
+                + Create First Trip
+              </button>
+            )}
           </div>
         ) : (
-          trips.map((trip) => {
+          filteredTrips.map((trip) => {
             const isAdmin = trip.members?.some(m => m.user?._id === user?._id && m.role === 'admin');
             const memberCount = trip.members?.length || 0;
 

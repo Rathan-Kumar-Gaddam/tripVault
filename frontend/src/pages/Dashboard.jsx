@@ -31,7 +31,9 @@ import {
   Edit3,
   Layers,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  Share2,
+  RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { 
@@ -41,6 +43,9 @@ import {
   printPersonalExpenseReport,
   computeUserShare 
 } from '../utils/exportUtils';
+import { DashboardSkeleton } from '../components/SkeletonLoader';
+import TransactionDetailModal from '../components/TransactionDetailModal';
+import ShareTripModal from '../components/ShareTripModal';
 
 const CATEGORY_COLORS = {
   'Food & Dining': '#f59e0b',
@@ -74,6 +79,7 @@ export default function Dashboard() {
     fundRequests, 
     fetchTripDetails, 
     logTransaction, 
+    deleteTransaction,
     updateTrip,
     createFundRequest, 
     respondToFundRequest, 
@@ -99,6 +105,11 @@ export default function Dashboard() {
   const [budgetValue, setBudgetValue] = useState('');
   const [isSavingBudget, setIsSavingBudget] = useState(false);
 
+  // Share Modal & Transaction Detail Modal State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [selectedTx, setSelectedTx] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   // Responding state for incoming requests
   const [respondingId, setRespondingId] = useState(null);
 
@@ -112,12 +123,28 @@ export default function Dashboard() {
     }
   }, [currentTrip?.budget]);
 
-  if (isLoading || !currentTrip) return (
-    <div className="p-10 flex flex-col items-center justify-center h-full text-slate-400 gap-3 min-h-[50vh]">
-      <div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
-      <p className="font-semibold text-xs animate-pulse">Calculating live passbook & balances...</p>
-    </div>
-  );
+  const handleRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      await fetchTripDetails(id);
+      toast.success('Live passbook synchronized! 🔄');
+    } catch (e) {
+      toast.error('Failed to sync passbook.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleDeleteTx = async (txId) => {
+    try {
+      await deleteTransaction(txId, id);
+      toast.success('Transaction removed and balances recalculated 🗑️');
+    } catch (e) {
+      toast.error('Failed to delete transaction.');
+    }
+  };
+
+  if (isLoading || !currentTrip) return <DashboardSkeleton />;
 
   const currency = currentTrip.currency || '₹';
   const members = currentTrip.members || [];
@@ -375,17 +402,38 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <button 
-          onClick={() => navigate('/profile')} 
-          className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white flex items-center justify-center font-bold text-lg overflow-hidden shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform border-2 border-white shrink-0"
-          title="My Profile"
-        >
-          {user?.avatar ? (
-            <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-          ) : (
-            user?.name ? user.name.charAt(0).toUpperCase() : <User size={20} />
-          )}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowShareModal(true)}
+            className="w-10 h-10 rounded-2xl bg-white text-indigo-600 border border-slate-200 hover:bg-indigo-50 shadow-sm flex items-center justify-center active:scale-90 transition-all"
+            title="Share Trip Vault / Invite Friends"
+          >
+            <Share2 size={17} />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="w-10 h-10 rounded-2xl bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm flex items-center justify-center active:scale-90 transition-all disabled:opacity-50"
+            title="Sync Live Passbook"
+          >
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-indigo-600' : ''} />
+          </button>
+
+          <button 
+            onClick={() => navigate('/profile')} 
+            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white flex items-center justify-center font-bold text-base overflow-hidden shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform border-2 border-white"
+            title="My Profile"
+          >
+            {user?.avatar ? (
+              <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+            ) : (
+              user?.name ? user.name.charAt(0).toUpperCase() : <User size={18} />
+            )}
+          </button>
+        </div>
       </header>
 
       {/* ===================== INCOMING APPROVAL REQUESTS BANNER ===================== */}
@@ -751,16 +799,21 @@ export default function Dashboard() {
               return (
                 <div
                   key={cat.name}
-                  className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between"
+                  onClick={() => navigate(`/trip/${id}/history?category=${encodeURIComponent(cat.name)}`)}
+                  className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between cursor-pointer hover:border-indigo-400 hover:shadow-md active:scale-95 transition-all group"
+                  title={`View ${cat.name} expenses in History`}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-lg">{cat.emoji}</span>
-                    <span className="text-[10px] font-extrabold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
+                    <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
                       {pct}%
                     </span>
                   </div>
                   <div>
-                    <p className="text-[11px] font-bold text-slate-700 truncate">{cat.name}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-bold text-slate-700 truncate group-hover:text-indigo-600 transition-colors">{cat.name}</p>
+                      <ChevronRight size={12} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                    </div>
                     <p className="text-xs font-black text-slate-900 mt-0.5 font-heading">
                       {currency}{cat.total.toFixed(2)}
                     </p>
@@ -998,6 +1051,79 @@ export default function Dashboard() {
             );
           })}
         </div>
+      </section>
+
+      {/* ===================== RECENT ACTIVITY (Clickable Details) ===================== */}
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-3.5">
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
+              <Receipt size={16} className="text-indigo-600" />
+              <span>Recent Activity</span>
+            </h3>
+            <p className="text-[11px] font-medium text-slate-400">Tap any item to view split receipt & breakdown</p>
+          </div>
+          <button 
+            onClick={() => navigate(`/trip/${id}/history`)}
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 active:scale-95 transition-all"
+          >
+            <span>All Logs</span>
+            <ChevronRight size={13} />
+          </button>
+        </div>
+
+        {transactions.length === 0 ? (
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 text-center shadow-sm">
+            <p className="text-xs font-semibold text-slate-400">No activity logged yet.</p>
+            <button
+              onClick={() => navigate(`/trip/${id}/add-money`)}
+              className="mt-2 text-xs font-bold text-indigo-600 hover:text-indigo-700"
+            >
+              + Log first expense
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {transactions.slice(0, 5).map((tx) => {
+              const isSettlement = tx.type === 'settlement';
+              const isPayerMe = (tx.payer?._id || tx.payer) === user?._id;
+              const emoji = CATEGORY_EMOJIS[tx.category] || (isSettlement ? '🤝' : '🏷️');
+              return (
+                <div
+                  key={tx._id}
+                  onClick={() => setSelectedTx(tx)}
+                  className="bg-white p-3.5 rounded-2xl flex items-center justify-between border border-slate-100 hover:border-indigo-300 shadow-sm cursor-pointer active:scale-95 transition-all group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-lg shrink-0 group-hover:scale-105 transition-transform">
+                      {emoji}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-xs truncate group-hover:text-indigo-600 transition-colors">
+                        {tx.description}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-semibold truncate mt-0.5">
+                        {isSettlement 
+                          ? `Settlement • ${isPayerMe ? 'You paid' : `${tx.payer?.name || 'Companion'} paid`}` 
+                          : `${tx.category} • Paid by ${isPayerMe ? 'You' : tx.payer?.name || 'Companion'}`
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="font-black text-xs text-slate-900 tracking-tight font-heading">
+                      {currency}{tx.amount?.toFixed(2)}
+                    </div>
+                    <span className="text-[10px] text-indigo-600 font-bold group-hover:underline">
+                      Details →
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* ===================== QUICK SETTLE-UP MODAL ===================== */}
@@ -1254,6 +1380,24 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Transaction Detail Sheet Modal */}
+      <TransactionDetailModal
+        transaction={selectedTx}
+        isOpen={!!selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onDelete={handleDeleteTx}
+        currency={currency}
+        currentUser={user}
+        isAdmin={isAdmin}
+      />
+
+      {/* Share Trip Modal */}
+      <ShareTripModal
+        trip={currentTrip}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+      />
     </div>
   );
 }
