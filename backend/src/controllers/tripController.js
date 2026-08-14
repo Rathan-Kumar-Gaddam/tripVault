@@ -140,3 +140,44 @@ export const deleteTrip = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Admin removes a member from the trip
+// @route   DELETE /api/trips/:tripId/members/:memberUserId
+export const removeMember = async (req, res) => {
+  try {
+    const { tripId, memberUserId } = req.params;
+    const requesterId = req.user._id;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) return res.status(404).json({ message: 'Trip not found' });
+
+    // Validate Requester is Admin
+    const isAdmin = trip.members.some(
+      (m) => m.user.toString() === requesterId.toString() && m.role === 'admin'
+    );
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Only admins can remove members.' });
+    }
+
+    // Prevent removing self
+    if (memberUserId.toString() === requesterId.toString()) {
+      return res.status(400).json({ message: 'Trip admin cannot be removed from the trip.' });
+    }
+
+    // Find member index
+    const memberIndex = trip.members.findIndex(
+      (m) => m.user.toString() === memberUserId.toString()
+    );
+    if (memberIndex === -1) {
+      return res.status(404).json({ message: 'Member not found in this trip.' });
+    }
+
+    trip.members.splice(memberIndex, 1);
+    await trip.save();
+
+    const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+    res.status(200).json({ message: 'Member removed successfully', trip: updatedTrip });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to remove member' });
+  }
+};

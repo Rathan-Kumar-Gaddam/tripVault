@@ -127,6 +127,11 @@ const useTripStore = create((set, get) => ({
     await get().fetchTripDetails(tripId); // Refresh balances
   },
 
+  removeMember: async (tripId, memberUserId) => {
+    await api.delete(`/trips/${tripId}/members/${memberUserId}`);
+    await get().fetchTripDetails(tripId); // Refresh balances
+  },
+
   logTransaction: async (txData) => {
     await api.post('/transactions', txData);
     await get().fetchTripDetails(txData.tripId); // Refresh balances instantly
