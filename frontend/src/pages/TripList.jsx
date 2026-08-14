@@ -10,40 +10,55 @@ export default function TripsList() {
   
   const [showForm, setShowForm] = useState(false);
   const [tripToDelete, setTripToDelete] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => { fetchTrips(); }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();
+    if (isCreating) return;
+
     const fd = new FormData(e.target);
+    const name = fd.get('name')?.toString().trim();
+    if (!name) {
+      toast.error('Trip name is required.');
+      return;
+    }
+
     try {
+      setIsCreating(true);
       await createTrip({
-        name: fd.get('name'),
-        destination: fd.get('destination'),
-        currency: fd.get('currency') || '₹'
+        name,
+        destination: fd.get('destination')?.toString().trim(),
+        currency: fd.get('currency')?.toString().trim() || '₹'
       });
       setShowForm(false);
-      // 2. Toast for creation
       toast.success('Trip created successfully! 🎉');
     } catch (error) {
-      toast.error('Failed to create trip.');
+      toast.error(error.response?.data?.message || 'Failed to create trip.');
+    } finally {
+      setIsCreating(false);
     }
   };
 
   const handleDeleteClick = (e, tripId) => {
     e.stopPropagation();
+    if (isDeleting) return;
     setTripToDelete(tripId); 
   };
 
   const confirmDelete = async () => {
-    if (tripToDelete) {
+    if (tripToDelete && !isDeleting) {
       try {
+        setIsDeleting(true);
         await deleteTrip(tripToDelete);
         setTripToDelete(null); 
-        // 3. Toast for deletion
         toast.success('Trip deleted successfully 🗑️');
       } catch (error) {
-        toast.error('Failed to delete trip.');
+        toast.error(error.response?.data?.message || 'Failed to delete trip.');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -63,12 +78,41 @@ export default function TripsList() {
       {/* Create Form */}
       {showForm ? (
         <form onSubmit={handleCreate} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6 flex flex-col gap-3">
-          <input name="name" placeholder="Trip Name (e.g. Goa 2026)" required className="p-3 bg-gray-50 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500" />
-          <input name="destination" placeholder="Destination" className="p-3 bg-gray-50 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500" />
-          <input name="currency" placeholder="Currency Symbol (default ₹)" className="p-3 bg-gray-50 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500" />
+          <input 
+            name="name" 
+            placeholder="Trip Name (e.g. Goa 2026)" 
+            required 
+            disabled={isCreating}
+            className="p-3 bg-gray-50 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-70" 
+          />
+          <input 
+            name="destination" 
+            placeholder="Destination" 
+            disabled={isCreating}
+            className="p-3 bg-gray-50 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-70" 
+          />
+          <input 
+            name="currency" 
+            placeholder="Currency Symbol (default ₹)" 
+            disabled={isCreating}
+            className="p-3 bg-gray-50 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-70" 
+          />
           <div className="flex gap-2 mt-2">
-            <button type="submit" className="flex-1 bg-indigo-600 text-white p-3 rounded-xl font-medium active:scale-95 transition-transform">Save</button>
-            <button type="button" onClick={() => setShowForm(false)} className="flex-1 bg-gray-100 text-gray-700 p-3 rounded-xl font-medium active:scale-95 transition-transform">Cancel</button>
+            <button 
+              type="submit" 
+              disabled={isCreating}
+              className="flex-1 bg-indigo-600 text-white p-3 rounded-xl font-medium active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isCreating ? 'Saving...' : 'Save'}
+            </button>
+            <button 
+              type="button" 
+              disabled={isCreating}
+              onClick={() => setShowForm(false)} 
+              className="flex-1 bg-gray-100 text-gray-700 p-3 rounded-xl font-medium active:scale-95 transition-transform disabled:opacity-50"
+            >
+              Cancel
+            </button>
           </div>
         </form>
       ) : (
@@ -96,7 +140,8 @@ export default function TripsList() {
               {isAdmin && (
                 <button 
                   onClick={(e) => handleDeleteClick(e, trip._id)}
-                  className="p-3 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                  disabled={isDeleting}
+                  className="p-3 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors disabled:opacity-50"
                   title="Delete Trip"
                 >
                   <Trash2 size={20} />
@@ -125,22 +170,22 @@ export default function TripsList() {
             <div className="flex gap-3">
               <button 
                 onClick={() => setTripToDelete(null)}
-                className="flex-1 py-3.5 bg-gray-100 text-gray-700 rounded-xl font-bold active:scale-95 transition-transform"
+                disabled={isDeleting}
+                className="flex-1 py-3.5 bg-gray-100 text-gray-700 rounded-xl font-bold active:scale-95 transition-transform disabled:opacity-50"
               >
                 Cancel
               </button>
               <button 
                 onClick={confirmDelete}
-                className="flex-1 py-3.5 bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-transform"
+                disabled={isDeleting}
+                className="flex-1 py-3.5 bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Yes, Delete
+                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
               </button>
             </div>
           </div>
-
         </div>
       )}
-
     </div>
   );
 }

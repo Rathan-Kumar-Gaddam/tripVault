@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import useTripStore from '../store/useTripStore';
 import { Check, Circle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function AddTransaction() {
   const { id } = useParams();
@@ -12,8 +13,10 @@ export default function AddTransaction() {
   const [splitMode, setSplitMode] = useState('all'); 
   const [selectedUser, setSelectedUser] = useState(''); 
   const [selectedUsers, setSelectedUsers] = useState([]); 
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleToggleUser = (userId) => {
+    if (isSubmitting) return;
     setSelectedUsers(prev => 
       prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
     );
@@ -21,19 +24,59 @@ export default function AddTransaction() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const fd = new FormData(e.target);
+    const amount = Number(fd.get('amount'));
+    const description = fd.get('description')?.toString().trim();
+
+    if (!amount || amount <= 0) {
+      toast.error('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (!description) {
+      toast.error('Please enter a description.');
+      return;
+    }
     
     let sharedBy = [];
-    if (splitMode === 'all') sharedBy = currentTrip.members.map(m => m.user._id);
-    else if (splitMode === 'individual') sharedBy = [selectedUser];
-    else if (splitMode === 'custom') sharedBy = selectedUsers;
+    if (splitMode === 'all') {
+      sharedBy = currentTrip?.members.map(m => m.user._id) || [];
+    } else if (splitMode === 'individual') {
+      if (!selectedUser) {
+        toast.error('Please select a member.');
+        return;
+      }
+      sharedBy = [selectedUser];
+    } else if (splitMode === 'custom') {
+      if (selectedUsers.length === 0) {
+        toast.error('Please select at least one member.');
+        return;
+      }
+      sharedBy = selectedUsers;
+    }
 
-    if (sharedBy.length === 0) return alert("Please select at least one member.");
+    if (sharedBy.length === 0) {
+      toast.error('Please select at least one member.');
+      return;
+    }
 
-    await logTransaction({
-      tripId: id, type, amount: Number(fd.get('amount')), description: fd.get('description'), sharedBy
-    });
-    navigate(`/trip/${id}`);
+    try {
+      setIsSubmitting(true);
+      await logTransaction({
+        tripId: id, 
+        type, 
+        amount, 
+        description, 
+        sharedBy
+      });
+      toast.success(`${type === 'expense' ? 'Expense' : 'Contribution'} logged successfully! 🎉`);
+      navigate(`/trip/${id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to log transaction.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -44,17 +87,47 @@ export default function AddTransaction() {
         
         {/* iOS Style Segmented Control */}
         <div className="flex p-1 bg-gray-100/80 rounded-2xl">
-          <button type="button" onClick={() => setType('expense')} className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${type === 'expense' ? 'bg-white shadow-[0_2px_8px_rgb(0,0,0,0.08)] text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Expense</button>
-          <button type="button" onClick={() => setType('contribution')} className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${type === 'contribution' ? 'bg-white shadow-[0_2px_8px_rgb(0,0,0,0.08)] text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}>Contribution</button>
+          <button 
+            type="button" 
+            disabled={isSubmitting}
+            onClick={() => setType('expense')} 
+            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${type === 'expense' ? 'bg-white shadow-[0_2px_8px_rgb(0,0,0,0.08)] text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Expense
+          </button>
+          <button 
+            type="button" 
+            disabled={isSubmitting}
+            onClick={() => setType('contribution')} 
+            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${type === 'contribution' ? 'bg-white shadow-[0_2px_8px_rgb(0,0,0,0.08)] text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Contribution
+          </button>
         </div>
 
         {/* Inputs */}
         <div className="space-y-4">
           <div className="relative">
             <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xl">{currentTrip?.currency}</span>
-            <input name="amount" type="number" step="0.01" min="0.01" placeholder="0.00" required className="w-full py-4 pl-12 pr-4 text-2xl font-bold rounded-2xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-gray-300" />
+            <input 
+              name="amount" 
+              type="number" 
+              step="0.01" 
+              min="0.01" 
+              placeholder="0.00" 
+              required 
+              disabled={isSubmitting}
+              className="w-full py-4 pl-12 pr-4 text-2xl font-bold rounded-2xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-gray-300 disabled:opacity-70" 
+            />
           </div>
-          <input name="description" type="text" placeholder="What was it for?" required className="w-full p-4 font-medium rounded-2xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-gray-400" />
+          <input 
+            name="description" 
+            type="text" 
+            placeholder="What was it for?" 
+            required 
+            disabled={isSubmitting}
+            className="w-full p-4 font-medium rounded-2xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-gray-400 disabled:opacity-70" 
+          />
         </div>
 
         {/* Split Selection Box */}
@@ -63,8 +136,9 @@ export default function AddTransaction() {
           
           <select 
             value={splitMode} 
+            disabled={isSubmitting}
             onChange={(e) => { setSplitMode(e.target.value); setSelectedUser(''); setSelectedUsers([]); }} 
-            className="w-full p-4 font-medium rounded-xl bg-gray-50 border border-gray-100 mb-4 outline-none focus:border-indigo-500 focus:bg-white transition-all appearance-none"
+            className="w-full p-4 font-medium rounded-xl bg-gray-50 border border-gray-100 mb-4 outline-none focus:border-indigo-500 focus:bg-white transition-all appearance-none disabled:opacity-70"
           >
             <option value="all">Everyone (Split Equally)</option>
             <option value="individual">One Specific Person</option>
@@ -73,7 +147,13 @@ export default function AddTransaction() {
 
           {/* Individual UI */}
           {splitMode === 'individual' && (
-            <select required value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="w-full p-4 font-medium rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-900 outline-none">
+            <select 
+              required 
+              disabled={isSubmitting}
+              value={selectedUser} 
+              onChange={(e) => setSelectedUser(e.target.value)} 
+              className="w-full p-4 font-medium rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-900 outline-none disabled:opacity-70"
+            >
               <option value="">Select Member...</option>
               {currentTrip?.members.map(m => (
                 <option key={m.user._id} value={m.user._id}>{m.user.name}</option>
@@ -92,7 +172,7 @@ export default function AddTransaction() {
                     onClick={() => handleToggleUser(m.user._id)}
                     className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all border ${
                       isSelected ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-100'
-                    }`}
+                    } ${isSubmitting ? 'pointer-events-none opacity-70' : ''}`}
                   >
                     <span className={`font-bold ${isSelected ? 'text-indigo-900' : 'text-gray-600'}`}>{m.user.name}</span>
                     {isSelected ? <div className="bg-indigo-600 text-white rounded-full p-1"><Check size={14} strokeWidth={4}/></div> : <Circle size={22} className="text-gray-300" />}
@@ -103,8 +183,12 @@ export default function AddTransaction() {
           )}
         </div>
 
-        <button type="submit" className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg mt-2 shadow-lg shadow-gray-900/20 active:scale-[0.98] transition-transform">
-          Log {type === 'expense' ? 'Expense' : 'Contribution'}
+        <button 
+          type="submit" 
+          disabled={isSubmitting}
+          className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg mt-2 shadow-lg shadow-gray-900/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSubmitting ? 'Logging Transaction...' : `Log ${type === 'expense' ? 'Expense' : 'Contribution'}`}
         </button>
       </form>
     </div>
