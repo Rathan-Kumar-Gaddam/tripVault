@@ -198,44 +198,43 @@ export default function Dashboard() {
     }
 
     const targetUserId = settleTarget.user?._id || settleTarget.user;
-    const isPayingThem = settleTarget.status === 'you_owe';
-    const payer = isPayingThem ? user?._id : targetUserId;
-    const recipient = isPayingThem ? targetUserId : user?._id;
+    const targetName = settleTarget.user?.name || 'Companion';
 
     try {
       setIsSettling(true);
-      await logTransaction({
+      await createFundRequest({
         tripId: id,
-        type: 'settlement',
+        requestType: 'settlement',
+        targetUser: targetUserId,
         amount: numAmount,
-        description: isPayingThem ? `Settlement to ${settleTarget.user?.name}` : `Settlement from ${settleTarget.user?.name}`,
-        payer,
-        recipient,
-        sharedBy: [recipient],
-        splits: [{ user: recipient, amount: numAmount }],
+        description: `Settlement payment to ${targetName}`,
         category: 'Settlement',
       });
 
-      toast.success(`Settlement of ${currency}${numAmount.toFixed(2)} recorded! 🎉`);
+      toast.success(`Settlement payment sent to ${targetName} for approval! 📩`);
       setSettleTarget(null);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to record settlement.');
+      toast.error(err.response?.data?.message || err.message || 'Failed to submit settlement.');
     } finally {
       setIsSettling(false);
     }
   };
 
-  // Handle Respond to Incoming Request (Accept & Pay OR Decline)
-  const handleRespondRequest = async (requestId, action, requesterName, reqAmount) => {
+  // Handle Respond to Incoming Request (Accept & Confirm OR Decline)
+  const handleRespondRequest = async (requestId, action, requesterName, reqAmount, requestType) => {
     if (respondingId) return;
 
     try {
       setRespondingId(requestId);
       await respondToFundRequest(requestId, action, id);
       if (action === 'accept') {
-        toast.success(`Fund request accepted! Covered ${currency}${reqAmount} for ${requesterName}. 🎉`);
+        if (requestType === 'settlement') {
+          toast.success(`Settlement confirmed! Confirmed receipt of ${currency}${reqAmount} from ${requesterName}. 🎉`);
+        } else {
+          toast.success(`Fund request accepted! Covered ${currency}${reqAmount} for ${requesterName}. 🎉`);
+        }
       } else {
-        toast('Fund request declined.', { icon: 'ℹ️' });
+        toast('Request declined.', { icon: 'ℹ️' });
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to process request.');
@@ -279,6 +278,7 @@ export default function Dashboard() {
       setIsAsking(true);
       await createFundRequest({
         tripId: id,
+        requestType: 'fund_request',
         targetUser: askTargetUser,
         amount: numAmount,
         description: askReason.trim(),
@@ -388,90 +388,137 @@ export default function Dashboard() {
         </button>
       </header>
 
-      {/* ===================== INCOMING FUND REQUESTS BANNER ===================== */}
+      {/* ===================== INCOMING APPROVAL REQUESTS BANNER ===================== */}
       {incomingRequests.length > 0 && (
         <div className="mb-6 space-y-3">
-          {incomingRequests.map((req) => (
-            <div 
-              key={req._id}
-              className="bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border-2 border-amber-400/60 rounded-3xl p-4 shadow-lg shadow-amber-500/10 animate-in fade-in slide-in-from-top-2 duration-300"
-            >
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 text-white flex items-center justify-center text-sm font-black shrink-0 overflow-hidden shadow-md">
-                  {req.requester?.avatar ? (
-                    <img src={req.requester.avatar} alt={req.requester.name} className="w-full h-full object-cover" />
-                  ) : (
-                    req.requester?.name?.charAt(0).toUpperCase() || '?'
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
-                      <Bell size={10} className="animate-bounce" /> Fund Request
-                    </span>
+          {incomingRequests.map((req) => {
+            const isSettlement = req.requestType === 'settlement';
+            return (
+              <div 
+                key={req._id}
+                className={`border-2 rounded-3xl p-4 shadow-lg animate-in fade-in slide-in-from-top-2 duration-300 ${
+                  isSettlement
+                    ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/15 to-emerald-500/10 border-emerald-400/60 shadow-emerald-500/10'
+                    : 'bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border-amber-400/60 shadow-amber-500/10'
+                }`}
+              >
+                <div className="flex items-start gap-3 mb-3">
+                  <div className={`w-10 h-10 rounded-2xl text-white flex items-center justify-center text-sm font-black shrink-0 overflow-hidden shadow-md ${
+                    isSettlement
+                      ? 'bg-gradient-to-tr from-emerald-500 to-teal-600'
+                      : 'bg-gradient-to-tr from-amber-500 to-orange-600'
+                  }`}>
+                    {req.requester?.avatar ? (
+                      <img src={req.requester.avatar} alt={req.requester.name} className="w-full h-full object-cover" />
+                    ) : (
+                      req.requester?.name?.charAt(0).toUpperCase() || '?'
+                    )}
                   </div>
-                  <h4 className="font-extrabold text-slate-900 text-sm mt-1">
-                    {req.requester?.name} is asking for <span className="text-amber-700 font-black">{currency}{req.amount.toFixed(2)}</span>
-                  </h4>
-                  <p className="text-xs text-slate-600 font-medium mt-0.5 italic">
-                    "{req.description}"
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
+                        isSettlement 
+                          ? 'bg-emerald-100 text-emerald-900' 
+                          : 'bg-amber-100 text-amber-900'
+                      }`}>
+                        <Bell size={10} className="animate-bounce" /> 
+                        {isSettlement ? 'Settlement Verification' : 'Fund Request'}
+                      </span>
+                    </div>
+                    <h4 className="font-extrabold text-slate-900 text-sm mt-1">
+                      {isSettlement ? (
+                        <>
+                          {req.requester?.name} paid you a settlement of <span className="text-emerald-700 font-black">{currency}{req.amount.toFixed(2)}</span>
+                        </>
+                      ) : (
+                        <>
+                          {req.requester?.name} is asking for <span className="text-amber-700 font-black">{currency}{req.amount.toFixed(2)}</span>
+                        </>
+                      )}
+                    </h4>
+                    <p className="text-xs text-slate-600 font-medium mt-0.5 italic">
+                      "{req.description}"
+                    </p>
+                    {isSettlement && (
+                      <p className="text-[11px] text-emerald-800 font-semibold mt-1">
+                        Please confirm once you receive the funds in your account/cash.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Buttons: Accept & Confirm vs Decline */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRespondRequest(req._id, 'decline', req.requester?.name, req.amount, req.requestType)}
+                    disabled={respondingId === req._id}
+                    className="flex-1 py-2.5 bg-white/80 hover:bg-white text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    Decline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRespondRequest(req._id, 'accept', req.requester?.name, req.amount, req.requestType)}
+                    disabled={respondingId === req._id}
+                    className={`flex-1 py-2.5 text-white font-bold rounded-xl text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1 ${
+                      isSettlement
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20'
+                    }`}
+                  >
+                    <Check size={14} strokeWidth={3} />
+                    <span>
+                      {respondingId === req._id 
+                        ? 'Processing...' 
+                        : isSettlement 
+                          ? `Confirm Receipt (${currency}${req.amount.toFixed(2)})`
+                          : `Accept & Pay ${currency}${req.amount.toFixed(2)}`
+                      }
+                    </span>
+                  </button>
                 </div>
               </div>
-
-              {/* Action Buttons: Accept & Pay vs Decline */}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleRespondRequest(req._id, 'decline', req.requester?.name, req.amount)}
-                  disabled={respondingId === req._id}
-                  className="flex-1 py-2.5 bg-white/80 hover:bg-white text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm active:scale-95 transition-all disabled:opacity-50"
-                >
-                  Decline
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRespondRequest(req._id, 'accept', req.requester?.name, req.amount)}
-                  disabled={respondingId === req._id}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1"
-                >
-                  <Check size={14} strokeWidth={3} />
-                  <span>{respondingId === req._id ? 'Processing...' : `Accept & Pay ${currency}${req.amount.toFixed(2)}`}</span>
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* ===================== OUTGOING PENDING REQUEST TRACKER ===================== */}
       {outgoingRequests.length > 0 && (
         <div className="mb-6 space-y-2">
-          {outgoingRequests.map((req) => (
-            <div 
-              key={req._id}
-              className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base animate-pulse">⏳</span>
-                <div className="min-w-0">
-                  <p className="font-bold text-indigo-950 truncate">
-                    Requested <strong>{currency}{req.amount.toFixed(2)}</strong> from {req.targetUser?.name}
-                  </p>
-                  <p className="text-[11px] text-indigo-600 truncate font-medium">
-                    Waiting for approval • "{req.description}"
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleCancelRequest(req._id)}
-                className="text-[11px] font-bold text-slate-500 hover:text-rose-600 bg-white px-2 py-1 rounded-lg border border-slate-200 shrink-0"
+          {outgoingRequests.map((req) => {
+            const isSettlement = req.requestType === 'settlement';
+            return (
+              <div 
+                key={req._id}
+                className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs"
               >
-                Cancel
-              </button>
-            </div>
-          ))}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base animate-pulse">⏳</span>
+                  <div className="min-w-0">
+                    <p className="font-bold text-indigo-950 truncate">
+                      {isSettlement ? (
+                        <>Settlement of <strong>{currency}{req.amount.toFixed(2)}</strong> sent to {req.targetUser?.name}</>
+                      ) : (
+                        <>Requested <strong>{currency}{req.amount.toFixed(2)}</strong> from {req.targetUser?.name}</>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-indigo-600 truncate font-medium">
+                      {isSettlement ? 'Waiting for receiver to confirm receipt' : 'Waiting for approval'} • "{req.description}"
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCancelRequest(req._id)}
+                  className="text-[11px] font-bold text-slate-500 hover:text-rose-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shrink-0 shadow-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -975,9 +1022,7 @@ export default function Dashboard() {
             </h3>
             
             <p className="text-xs text-slate-500 mb-4">
-              {settleTarget.status === 'you_owe' 
-                ? `Record payment made to ${settleTarget.user?.name} to clear your debt.` 
-                : `Record payment received from ${settleTarget.user?.name}.`}
+              Send settlement payment to <strong>{settleTarget.user?.name}</strong>. They will receive an approval request to confirm receipt before trip balances update.
             </p>
 
             <form onSubmit={handleConfirmSettle} className="flex flex-col gap-4">
@@ -1008,9 +1053,10 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={isSettling || !Number(settleAmount) || Number(settleAmount) <= 0}
-                  className="flex-1 py-3.5 bg-emerald-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-emerald-600/25 hover:bg-emerald-700 active:scale-95 transition disabled:opacity-50"
+                  className="flex-1 py-3.5 bg-emerald-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-emerald-600/25 hover:bg-emerald-700 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  {isSettling ? 'Recording...' : 'Confirm Settle'}
+                  <HandCoins size={15} />
+                  <span>{isSettling ? 'Sending...' : 'Send for Approval'}</span>
                 </button>
               </div>
             </form>

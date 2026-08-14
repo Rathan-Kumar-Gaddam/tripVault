@@ -154,6 +154,7 @@ export default function AddTransaction() {
         setIsSubmitting(true);
         await createFundRequest({
           tripId: id,
+          requestType: 'fund_request',
           targetUser: askTargetUser,
           amount: numericAmount,
           description: note,
@@ -170,10 +171,6 @@ export default function AddTransaction() {
 
     // SETTLEMENT MODE
     if (tab === 'settlement') {
-      if (!settlePayer) {
-        toast.error('Please select who made the payment.');
-        return;
-      }
       if (!settleRecipient) {
         toast.error('Please select who received the payment.');
         return;
@@ -184,24 +181,23 @@ export default function AddTransaction() {
       }
 
       const desc = settleNote.trim() || `Settlement Payment`;
+      const recipientMember = members.find(m => (m.user?._id || m.user)?.toString() === settleRecipient.toString());
+      const recipientName = recipientMember?.user?.name || 'Companion';
 
       try {
         setIsSubmitting(true);
-        await logTransaction({
+        await createFundRequest({
           tripId: id,
-          type: 'settlement',
+          requestType: 'settlement',
+          targetUser: settleRecipient,
           amount: numericAmount,
           description: desc,
-          payer: settlePayer,
-          recipient: settleRecipient,
-          sharedBy: [settleRecipient],
-          splits: [{ user: settleRecipient, amount: numericAmount }],
           category: 'Settlement',
         });
-        toast.success('Settlement recorded! 🎉');
+        toast.success(`Settlement payment sent to ${recipientName} for approval! 📩`);
         navigate(`/trip/${id}`);
       } catch (err) {
-        toast.error(err.response?.data?.message || 'Failed to record settlement.');
+        toast.error(err.response?.data?.message || err.message || 'Failed to send settlement request.');
         setIsSubmitting(false);
       }
       return;
@@ -916,7 +912,7 @@ export default function AddTransaction() {
           ) : tab === 'settlement' ? (
             <>
               <HandCoins size={16} />
-              <span>Record Settlement ({currency}{numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})</span>
+              <span>Send Settlement for Approval ({currency}{numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})</span>
             </>
           ) : tab === 'ask' ? (
             <>
