@@ -81,6 +81,57 @@ export const addMember = async (req, res) => {
   }
 };
 
+// @desc    Get trip preview info for invite links (public / authenticated)
+// @route   GET /api/trips/:tripId/preview
+export const getTripPreview = async (req, res) => {
+  try {
+    const trip = await Trip.findById(req.params.tripId).populate('members.user', 'name avatar');
+    if (!trip) return res.status(404).json({ message: 'Trip vault not found.' });
+
+    const admin = trip.members.find(m => m.role === 'admin');
+
+    res.json({
+      _id: trip._id,
+      name: trip.name,
+      currency: trip.currency,
+      memberCount: trip.members.length,
+      destination: trip.destination,
+      adminName: admin?.user?.name || 'Organizer',
+      createdAt: trip.createdAt,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to fetch trip preview' });
+  }
+};
+
+// @desc    Join a trip using an invite link
+// @route   POST /api/trips/:tripId/join
+export const joinTrip = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const userId = req.user._id;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) return res.status(404).json({ message: 'Trip not found.' });
+
+    // Check if user is already a member
+    const alreadyInTrip = trip.members.some((m) => m.user.toString() === userId.toString());
+    if (alreadyInTrip) {
+      const populated = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+      return res.status(200).json({ message: 'Already a member of this trip.', trip: populated });
+    }
+
+    // Add user as member
+    trip.members.push({ user: userId, role: 'member', balance: 0 });
+    await trip.save();
+
+    const populated = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+    res.status(200).json({ message: `Successfully joined ${trip.name}!`, trip: populated });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to join trip' });
+  }
+};
+
 // @desc    Get trip details (accessible by any member in the trip)
 // @route   GET /api/trips/:tripId
 export const getTripById = async (req, res) => {
@@ -90,7 +141,7 @@ export const getTripById = async (req, res) => {
 
     // Ensure the requester is part of the trip
     const isMember = trip.members.some((m) => m.user._id.toString() === req.user._id.toString());
-    if (!isMember) return res.status(403).json({ message: 'Access denied' });
+    if (!isMember) return res.status(403).json({ message: 'Access denied. You must join this trip first.' });
 
     res.json(trip);
   } catch (error) {

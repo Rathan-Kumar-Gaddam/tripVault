@@ -297,6 +297,36 @@ const useTripStore = create((set, get) => ({
     }
   },
 
+  joinTrip: async (tripId) => {
+    set({ isLoading: true });
+    try {
+      const { data } = await api.post(`/trips/${tripId}/join`);
+      set((state) => {
+        const tripExists = state.trips.some(t => t._id === tripId);
+        return {
+          currentTrip: data.trip,
+          trips: tripExists ? state.trips.map(t => t._id === tripId ? data.trip : t) : [...state.trips, data.trip],
+          isLoading: false
+        };
+      });
+      return data;
+    } catch (error) {
+      set({ isLoading: false });
+      const msg = getErrorMessage(error, 'Failed to join trip');
+      throw new Error(msg);
+    }
+  },
+
+  getTripPreview: async (tripId) => {
+    try {
+      const { data } = await api.get(`/trips/${tripId}/preview`);
+      return data;
+    } catch (error) {
+      const msg = getErrorMessage(error, 'Trip preview not available');
+      throw new Error(msg);
+    }
+  },
+
   // Member Management
   addMember: async (tripId, memberData) => {
     await api.post(`/trips/${tripId}/members`, memberData);

@@ -9,6 +9,7 @@ import AddTransaction from './pages/AddTransaction';
 import AddMember from './pages/AddMember';
 import History from './pages/History';
 import Profile from './pages/Profile';
+import JoinTrip from './pages/JoinTrip';
 
 const ProtectedRoute = ({ children }) => {
   const user = useTripStore((state) => state.user);
@@ -33,6 +34,8 @@ function App() {
           <main className="flex-1 overflow-y-auto pb-24 no-scrollbar">
             <Routes>
               <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/" />} />
+              <Route path="/join/:id" element={<JoinTrip />} />
+              <Route path="/trip/:id/join" element={<JoinTrip />} />
               
               <Route path="/" element={<ProtectedRoute><TripsList /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

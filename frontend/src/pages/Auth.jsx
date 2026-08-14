@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useTripStore from '../store/useTripStore';
 import { 
   PlaneTakeoff, 
@@ -9,16 +10,18 @@ import {
   Sparkles, 
   ShieldCheck, 
   Zap, 
-  ArrowRight 
+  ArrowRight,
+  UserPlus 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Auth() {
+  const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [loginMethod, setLoginMethod] = useState('phone'); // 'phone' | 'email'
   const [phone, setPhone] = useState('');
   const [regPhone, setRegPhone] = useState('');
-  const { login, loginWithPhone, register, error, isLoading } = useTripStore();
+  const { login, loginWithPhone, register, joinTrip, error, isLoading } = useTripStore();
 
   const handleTabSwitch = (loginState) => {
     setIsLogin(loginState);
@@ -42,6 +45,22 @@ export default function Auth() {
     if (error) useTripStore.setState({ error: null });
   };
 
+  const checkPendingJoin = async () => {
+    const pendingTripId = sessionStorage.getItem('pendingJoinTripId');
+    if (pendingTripId) {
+      try {
+        await joinTrip(pendingTripId);
+        sessionStorage.removeItem('pendingJoinTripId');
+        toast.success('Joined trip vault! 🚀');
+        navigate(`/trip/${pendingTripId}`);
+        return true;
+      } catch (e) {
+        sessionStorage.removeItem('pendingJoinTripId');
+      }
+    }
+    return false;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -58,6 +77,8 @@ export default function Auth() {
           }
           await loginWithPhone(cleanPhone);
           toast.success('Welcome back! ✈️');
+          const joined = await checkPendingJoin();
+          if (!joined) navigate('/');
         } else {
           const email = fd.get('email')?.toString().trim();
           const password = fd.get('password')?.toString();
@@ -67,6 +88,8 @@ export default function Auth() {
           }
           await login(email, password);
           toast.success('Welcome back! ✈️');
+          const joined = await checkPendingJoin();
+          if (!joined) navigate('/');
         }
       } else {
         const name = fd.get('name')?.toString().trim();
@@ -93,6 +116,8 @@ export default function Auth() {
 
         await register(name, email, password, cleanRegPhone || undefined);
         toast.success('Account created successfully! Welcome to TripVault 🎉');
+        const joined = await checkPendingJoin();
+        if (!joined) navigate('/');
       }
     } catch (err) {
       toast.error(err.message || 'Authentication failed');
@@ -170,9 +195,25 @@ export default function Auth() {
 
         {/* Error Alert */}
         {error && (
-          <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-xs font-semibold mb-5 flex items-center gap-2 animate-in fade-in">
-            <span>⚠️</span>
-            <span>{error}</span>
+          <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-xs font-semibold mb-5 flex flex-col gap-2 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
+            {isLogin && loginMethod === 'phone' && error.includes('No account found') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRegPhone(phone);
+                  setIsLogin(false);
+                  useTripStore.setState({ error: null });
+                }}
+                className="mt-1 py-2 px-3 bg-white border border-rose-200 text-rose-700 rounded-xl text-xs font-bold hover:bg-rose-100 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <UserPlus size={14} />
+                <span>Create account with {phone} →</span>
+              </button>
+            )}
           </div>
         )}
 

@@ -6,7 +6,9 @@ import {
   getTripById, 
   getUserTrips, 
   updateTrip,
-  deleteTrip 
+  deleteTrip,
+  joinTrip,
+  getTripPreview 
 } from '../controllers/tripController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -15,6 +17,12 @@ const router = express.Router();
 router.route('/')
   .post(protect, createTrip)
   .get(protect, getUserTrips);
+
+router.route('/:tripId/preview')
+  .get(getTripPreview);
+
+router.route('/:tripId/join')
+  .post(protect, joinTrip);
 
 router.route('/:tripId')
   .get(protect, getTripById)

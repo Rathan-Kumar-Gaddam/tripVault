@@ -18,7 +18,7 @@ export default function ShareTripModal({ trip, isOpen, onClose }) {
   if (!isOpen || !trip) return null;
 
   const tripId = trip._id;
-  const inviteUrl = `${window.location.origin}/trip/${tripId}`;
+  const inviteUrl = `${window.location.origin}/join/${tripId}`;
   const shareText = `Join my trip vault "${trip.name}" on TripVault to track expenses, live balances, and settle debts: ${inviteUrl}`;
 
   const handleCopy = async () => {
