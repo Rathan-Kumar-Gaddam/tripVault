@@ -8,11 +8,33 @@ const api = axios.create({
 // Automatically attach JWT token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token) {
+  if (token && token !== 'undefined' && token !== 'null') {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+// Automatically handle 401 Unauthorized responses globally
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Clear stale auth data
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      useTripStore.setState({ 
+        user: null, 
+        trips: [], 
+        currentTrip: null, 
+        transactions: [], 
+        fundRequests: [],
+        isLoading: false,
+        error: error.response?.data?.message || 'Session expired. Please log in again.'
+      });
+    }
+    return Promise.reject(error);
+  }
+);
 
 /**
  * Calculates exact peer-to-peer debts between all pairs of members
@@ -124,6 +146,14 @@ export const computeBilateralDebts = (members = [], transactions = [], currentUs
   };
 };
 
+const getErrorMessage = (err, fallback) => {
+  if (err.response?.data?.message) return err.response.data.message;
+  if (err.message === 'Network Error' || !err.response) {
+    return 'Cannot connect to backend server. Please make sure the backend is running on port 5000.';
+  }
+  return fallback || err.message || 'Request failed';
+};
+
 const useTripStore = create((set, get) => ({
   user: JSON.parse(localStorage.getItem('user')) || null,
   trips: [],
@@ -140,9 +170,12 @@ const useTripStore = create((set, get) => ({
       const { data } = await api.post('/auth/login', { email, password });
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data));
-      set({ user: data, isLoading: false });
+      set({ user: data, isLoading: false, error: null });
+      return data;
     } catch (err) {
-      set({ error: err.response?.data?.message || 'Login failed', isLoading: false });
+      const msg = getErrorMessage(err, 'Login failed');
+      set({ error: msg, isLoading: false });
+      throw new Error(msg);
     }
   },
 
@@ -152,9 +185,12 @@ const useTripStore = create((set, get) => ({
       const { data } = await api.post('/auth/login-phone', { phone });
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data));
-      set({ user: data, isLoading: false });
+      set({ user: data, isLoading: false, error: null });
+      return data;
     } catch (err) {
-      set({ error: err.response?.data?.message || 'Phone login failed', isLoading: false });
+      const msg = getErrorMessage(err, 'Phone login failed');
+      set({ error: msg, isLoading: false });
+      throw new Error(msg);
     }
   },
 
@@ -164,9 +200,12 @@ const useTripStore = create((set, get) => ({
       const { data } = await api.post('/auth/register', { name, email, password, phone });
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data));
-      set({ user: data, isLoading: false });
+      set({ user: data, isLoading: false, error: null });
+      return data;
     } catch (err) {
-      set({ error: err.response?.data?.message || 'Registration failed', isLoading: false });
+      const msg = getErrorMessage(err, 'Registration failed');
+      set({ error: msg, isLoading: false });
+      throw new Error(msg);
     }
   },
 
@@ -190,10 +229,10 @@ const useTripStore = create((set, get) => ({
       const currentUser = get().user;
       const updatedUser = { ...currentUser, ...data };
       localStorage.setItem('user', JSON.stringify(updatedUser));
-      set({ user: updatedUser, isLoading: false });
+      set({ user: updatedUser, isLoading: false, error: null });
       return updatedUser;
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to update profile';
+      const msg = getErrorMessage(err, 'Failed to update profile');
       set({ error: msg, isLoading: false });
       throw new Error(msg);
     }
@@ -202,14 +241,18 @@ const useTripStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    set({ user: null, trips: [], currentTrip: null, transactions: [], fundRequests: [] });
+    set({ user: null, trips: [], currentTrip: null, transactions: [], fundRequests: [], error: null });
   },
 
   // Trips & Balances
   fetchTrips: async () => {
     set({ isLoading: true });
-    const { data } = await api.get('/trips');
-    set({ trips: data, isLoading: false });
+    try {
+      const { data } = await api.get('/trips');
+      set({ trips: data, isLoading: false });
+    } catch (err) {
+      set({ isLoading: false });
+    }
   },
 
   createTrip: async (tripData) => {

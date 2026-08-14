@@ -17,47 +17,85 @@ export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [loginMethod, setLoginMethod] = useState('phone'); // 'phone' | 'email'
   const [phone, setPhone] = useState('');
+  const [regPhone, setRegPhone] = useState('');
   const { login, loginWithPhone, register, error, isLoading } = useTripStore();
+
+  const handleTabSwitch = (loginState) => {
+    setIsLogin(loginState);
+    useTripStore.setState({ error: null });
+  };
+
+  const handleMethodSwitch = (method) => {
+    setLoginMethod(method);
+    useTripStore.setState({ error: null });
+  };
 
   const handlePhoneChange = (e) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
     setPhone(raw);
+    if (error) useTripStore.setState({ error: null });
+  };
+
+  const handleRegPhoneChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
+    setRegPhone(raw);
+    if (error) useTripStore.setState({ error: null });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     
-    if (isLogin) {
-      if (loginMethod === 'phone') {
-        const cleanPhone = phone.trim();
-        if (!cleanPhone || cleanPhone.length !== 10) {
-          useTripStore.setState({ error: 'Please enter a valid 10-digit phone number.' });
-          toast.error('Please enter a valid 10-digit phone number.');
-          return;
+    try {
+      if (isLogin) {
+        if (loginMethod === 'phone') {
+          const cleanPhone = phone.trim();
+          if (!cleanPhone || cleanPhone.length !== 10) {
+            const msg = 'Please enter a valid 10-digit phone number.';
+            useTripStore.setState({ error: msg });
+            toast.error(msg);
+            return;
+          }
+          await loginWithPhone(cleanPhone);
+          toast.success('Welcome back! ✈️');
+        } else {
+          const email = fd.get('email')?.toString().trim();
+          const password = fd.get('password')?.toString();
+          if (!email || !password) {
+            toast.error('Please provide both email and password.');
+            return;
+          }
+          await login(email, password);
+          toast.success('Welcome back! ✈️');
         }
-        await loginWithPhone(cleanPhone);
       } else {
+        const name = fd.get('name')?.toString().trim();
         const email = fd.get('email')?.toString().trim();
         const password = fd.get('password')?.toString();
-        if (email && password) await login(email, password);
-      }
-    } else {
-      const name = fd.get('name')?.toString().trim();
-      const email = fd.get('email')?.toString().trim();
-      const password = fd.get('password')?.toString();
-      const regPhone = fd.get('phone')?.toString().trim();
+        const cleanRegPhone = regPhone.trim();
 
-      if (!name) {
-        toast.error('Name is required');
-        return;
-      }
-      if (regPhone && regPhone.length !== 10) {
-        toast.error('Phone number must be exactly 10 digits.');
-        return;
-      }
+        if (!name) {
+          toast.error('Name is required');
+          return;
+        }
+        if (!email) {
+          toast.error('Email is required');
+          return;
+        }
+        if (!password || password.length < 6) {
+          toast.error('Password must be at least 6 characters.');
+          return;
+        }
+        if (cleanRegPhone && cleanRegPhone.length !== 10) {
+          toast.error('Phone number must be exactly 10 digits.');
+          return;
+        }
 
-      await register(name, email, password, regPhone);
+        await register(name, email, password, cleanRegPhone || undefined);
+        toast.success('Account created successfully! Welcome to TripVault 🎉');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Authentication failed');
     }
   };
 
@@ -84,7 +122,7 @@ export default function Auth() {
         <div className="flex p-1.5 bg-slate-100/80 rounded-2xl mb-6">
           <button 
             type="button"
-            onClick={() => setIsLogin(true)} 
+            onClick={() => handleTabSwitch(true)} 
             className={`flex-1 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
               isLogin ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
             }`}
@@ -93,7 +131,7 @@ export default function Auth() {
           </button>
           <button 
             type="button"
-            onClick={() => setIsLogin(false)} 
+            onClick={() => handleTabSwitch(false)} 
             className={`flex-1 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
               !isLogin ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
             }`}
@@ -107,7 +145,7 @@ export default function Auth() {
           <div className="flex items-center gap-2 mb-6">
             <button
               type="button"
-              onClick={() => setLoginMethod('phone')}
+              onClick={() => handleMethodSwitch('phone')}
               className={`flex-1 py-2.5 px-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all ${
                 loginMethod === 'phone'
                   ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm'
@@ -118,7 +156,7 @@ export default function Auth() {
             </button>
             <button
               type="button"
-              onClick={() => setLoginMethod('email')}
+              onClick={() => handleMethodSwitch('email')}
               className={`flex-1 py-2.5 px-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all ${
                 loginMethod === 'email'
                   ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm'
@@ -162,16 +200,16 @@ export default function Auth() {
                   <input 
                     name="phone" 
                     type="tel" 
-                    value={phone}
-                    onChange={handlePhoneChange}
+                    value={regPhone}
+                    onChange={handleRegPhoneChange}
                     maxLength={10}
                     placeholder="10-digit Phone (Optional)" 
                     disabled={isLoading}
                     className="w-full p-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium tracking-wide text-sm placeholder:text-slate-400 disabled:opacity-70" 
                   />
                 </div>
-                {phone.length > 0 && (
-                  <p className="text-[11px] text-slate-400 mt-1 px-1">{phone.length}/10 digits</p>
+                {regPhone.length > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1 px-1">{regPhone.length}/10 digits</p>
                 )}
               </div>
 

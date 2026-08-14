@@ -133,6 +133,10 @@ export default function Profile() {
     }
 
     if (showPasswordSection && newPassword) {
+      if (user?.hasPassword && !currentPassword) {
+        toast.error('Current password is required to change password.');
+        return;
+      }
       if (newPassword.length < 6) {
         toast.error('New password must be at least 6 characters.');
         return;
@@ -153,7 +157,7 @@ export default function Profile() {
       };
 
       if (showPasswordSection && newPassword) {
-        payload.currentPassword = currentPassword;
+        if (currentPassword) payload.currentPassword = currentPassword;
         payload.newPassword = newPassword;
       }
 
@@ -314,7 +318,9 @@ export default function Profile() {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-900">Security & Password</p>
-                <p className="text-xs font-normal text-gray-400">Set or change your account password</p>
+                <p className="text-xs font-normal text-gray-400">
+                  {user?.hasPassword ? 'Change your account password' : 'Set a password for your account'}
+                </p>
               </div>
             </div>
             {showPasswordSection ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
@@ -322,7 +328,7 @@ export default function Profile() {
 
           {showPasswordSection && (
             <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-3 animate-in fade-in duration-200">
-              {user?.password && (
+              {user?.hasPassword && (
                 <input
                   type="password"
                   value={currentPassword}

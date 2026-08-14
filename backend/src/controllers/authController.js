@@ -3,51 +3,90 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  const secret = process.env.JWT_SECRET || 'super_secret_tripvault_key_2026';
+  return jwt.sign({ id }, secret, { expiresIn: '30d' });
 };
 
-// @desc    Register a new Admin user
+const formatUserResponse = (user, token) => {
+  const resObj = {
+    _id: user._id,
+    name: user.name,
+    email: user.email || '',
+    phone: user.phone || '',
+    avatar: user.avatar || '',
+    hasPassword: !!user.password,
+    requiresPasswordChange: !!user.requiresPasswordChange,
+  };
+  if (token) {
+    resObj.token = token;
+  }
+  return resObj;
+};
+
+// @desc    Register a new user or claim an invited companion account
 // @route   POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
+      return res.status(400).json({ message: 'Name, email, and password are required.' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters.' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const userExists = await User.findOne({ email: cleanEmail });
-    if (userExists) return res.status(400).json({ message: 'User already exists with this email' });
+    const emailExists = await User.findOne({ email: cleanEmail });
+    if (emailExists) {
+      return res.status(400).json({ message: 'An account already exists with this email address.' });
+    }
 
     let cleanPhone = undefined;
-    if (phone && phone.trim()) {
-      cleanPhone = phone.trim().replace(/[\s-]/g, '');
-      const phoneExists = await User.findOne({ phone: cleanPhone });
-      if (phoneExists) return res.status(400).json({ message: 'User already exists with this phone number' });
+    if (phone && phone.toString().trim()) {
+      cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+      if (cleanPhone.length !== 10) {
+        return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+      }
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const user = await User.create({ 
-      name: name.trim(), 
-      email: cleanEmail, 
-      phone: cleanPhone,
-      password: hashedPassword 
-    });
+    let user;
+    if (cleanPhone) {
+      const existingPhoneUser = await User.findOne({ phone: cleanPhone });
+      if (existingPhoneUser) {
+        if (existingPhoneUser.password) {
+          return res.status(400).json({ 
+            message: 'An account with this phone number already exists. Please sign in with your email or phone.' 
+          });
+        }
+        // Claim/upgrade companion account created without a password
+        existingPhoneUser.name = name.trim();
+        existingPhoneUser.email = cleanEmail;
+        existingPhoneUser.password = hashedPassword;
+        user = await existingPhoneUser.save();
+      }
+    }
 
-    res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      avatar: user.avatar || '',
-      requiresPasswordChange: user.requiresPasswordChange,
-      token: generateToken(user._id),
-    });
+    if (!user) {
+      user = await User.create({ 
+        name: name.trim(), 
+        email: cleanEmail, 
+        phone: cleanPhone, 
+        password: hashedPassword 
+      });
+    }
+
+    res.status(201).json(formatUserResponse(user, generateToken(user._id)));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'field';
+      return res.status(400).json({ message: `This ${field} is already associated with another account.` });
+    }
+    res.status(500).json({ message: error.message || 'Registration failed' });
   }
 };
 
@@ -58,29 +97,29 @@ export const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: 'Please provide both email and password' });
+      return res.status(400).json({ message: 'Please provide both email and password.' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
     const user = await User.findOne({ email: cleanEmail });
-    if (!user || !user.password) {
-      return res.status(401).json({ message: 'Invalid email or password' });
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({ 
+        message: 'This account was invited by phone without a password. Please sign in using your Phone Number or register your password.' 
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: 'Invalid email or password' });
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
 
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      avatar: user.avatar || '',
-      requiresPasswordChange: user.requiresPasswordChange,
-      token: generateToken(user._id),
-    });
+    res.json(formatUserResponse(user, generateToken(user._id)));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Login failed' });
   }
 };
 
@@ -90,10 +129,10 @@ export const loginPhone = async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) {
-      return res.status(400).json({ message: 'Please provide a phone number.' });
+      return res.status(400).json({ message: 'Please provide a 10-digit phone number.' });
     }
 
-    const cleanPhone = phone.toString().replace(/\D/g, '');
+    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
     if (!/^\d{10}$/.test(cleanPhone)) {
       return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
     }
@@ -101,21 +140,13 @@ export const loginPhone = async (req, res) => {
     const user = await User.findOne({ phone: cleanPhone });
     if (!user) {
       return res.status(404).json({ 
-        message: 'No account found with this 10-digit phone number. Ask your trip admin to add you.' 
+        message: 'No account found with this 10-digit phone number. Ask your trip admin to add you or create a new account.' 
       });
     }
 
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      avatar: user.avatar || '',
-      requiresPasswordChange: user.requiresPasswordChange,
-      token: generateToken(user._id),
-    });
+    res.json(formatUserResponse(user, generateToken(user._id)));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Phone login failed' });
   }
 };
 
@@ -123,11 +154,11 @@ export const loginPhone = async (req, res) => {
 // @route   GET /api/auth/profile
 export const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
+    const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json(user);
+    res.json(formatUserResponse(user));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Failed to fetch profile' });
   }
 };
 
@@ -144,8 +175,8 @@ export const updateProfile = async (req, res) => {
     }
 
     if (phone !== undefined) {
-      if (phone && phone.trim()) {
-        const cleanPhone = phone.toString().replace(/\D/g, '');
+      if (phone && phone.toString().trim()) {
+        const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
         if (!/^\d{10}$/.test(cleanPhone)) {
           return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
         }
@@ -177,6 +208,9 @@ export const updateProfile = async (req, res) => {
     }
 
     if (newPassword && newPassword.trim()) {
+      if (newPassword.trim().length < 6) {
+        return res.status(400).json({ message: 'New password must be at least 6 characters.' });
+      }
       if (user.password) {
         if (!currentPassword) {
           return res.status(400).json({ message: 'Current password is required to update password.' });
@@ -193,15 +227,12 @@ export const updateProfile = async (req, res) => {
 
     await user.save();
 
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      avatar: user.avatar || '',
-      requiresPasswordChange: user.requiresPasswordChange,
-    });
+    res.json(formatUserResponse(user));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'field';
+      return res.status(400).json({ message: `This ${field} is already associated with another account.` });
+    }
+    res.status(500).json({ message: error.message || 'Failed to update profile' });
   }
 };

@@ -4,13 +4,20 @@ import cors from 'cors';
 import helmet from 'helmet';
 import connectDB from './config/db.js';
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 // Route Imports
 import authRoutes from './routes/authRoutes.js';
 import tripRoutes from './routes/tripRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import requestRoutes from './routes/requestRoutes.js';
 
-dotenv.config({ path: new URL('../.env', import.meta.url) });
+// Robust environment variable loading
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 // Connect to Database
 connectDB();
