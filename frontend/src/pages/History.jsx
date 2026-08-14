@@ -59,10 +59,14 @@ export default function History() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
+  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
     if (!currentTrip || currentTrip._id !== id) {
-      fetchTripDetails(id);
+      setFetchError(null);
+      fetchTripDetails(id).catch((err) => {
+        setFetchError(err.response?.data?.message || err.message || 'Failed to load activity history');
+      });
     }
   }, [id]);
 
@@ -73,12 +77,26 @@ export default function History() {
     }
   }, [searchParams]);
 
-  if (isLoading || !currentTrip) {
+  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
     return <HistorySkeleton />;
   }
 
+  if (fetchError || !currentTrip) {
+    return (
+      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
+        <h2 className="text-xl font-bold text-slate-900 mb-2">{fetchError || 'Trip Not Found'}</h2>
+        <button
+          onClick={() => navigate('/')}
+          className="mt-4 px-6 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl"
+        >
+          ← Back to Trips
+        </button>
+      </div>
+    );
+  }
+
   const currency = currentTrip.currency || '₹';
-  const myMembership = currentTrip.members?.find(m => (m.user?._id || m.user) === user?._id);
+  const myMembership = currentTrip.members?.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
   const isAdmin = myMembership?.role === 'admin';
 
   const { companionDebts } = computeBilateralDebts(currentTrip.members, transactions, user?._id);
@@ -185,32 +203,39 @@ export default function History() {
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   return (
-    <div className="p-6 pb-28">
-      {/* Top Header */}
-      <header className="flex justify-between items-center mb-6">
-        <button 
-          onClick={() => navigate(`/trip/${id}`)} 
-          className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-transform"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="text-center">
-          <h1 className="text-xl font-bold text-slate-900 font-heading">Trip Activity Log</h1>
-          <p className="text-xs text-slate-500 font-medium">{currentTrip.name}</p>
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28 sm:pb-24">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-6 sm:mb-8">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(`/trip/${id}`)} 
+            className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-all"
+            title="Back to Vault Dashboard"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-heading">
+              Activity History
+            </h1>
+            <p className="text-slate-500 text-xs sm:text-sm font-semibold">
+              {currentTrip.name} • {filteredTransactions.length} of {transactions.length} logs
+            </p>
+          </div>
         </div>
 
         {/* Export Dropdown Menu */}
         <div className="relative">
           <button 
             onClick={() => setShowExportMenu(!showExportMenu)}
-            className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-indigo-600 shadow-sm active:scale-95 transition-all"
+            className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-indigo-600 shadow-sm active:scale-95 transition-all"
             title="Export Reports"
           >
             <Download size={20} />
           </button>
 
           {showExportMenu && (
-            <div className="absolute right-0 top-12 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 top-14 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                 Full Group Reports
               </div>
@@ -253,22 +278,38 @@ export default function History() {
         </div>
       </header>
 
-      {/* Summary Stat Pills */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
-            {filterType === 'my_share' ? 'My Consumed Share' : 'Total Expenses'}
+      {/* Summary Stat Pills Responsive Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+        <div className="bg-white border border-slate-200/80 p-4 sm:p-5 rounded-[2rem] shadow-sm">
+          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+            Total Trip Spend
           </p>
-          <p className="text-lg font-black text-rose-600 font-heading">
-            -{currency}{(filterType === 'my_share' ? totalMyConsumption : totalSpent).toFixed(2)}
+          <p className="text-xl sm:text-2xl font-black text-rose-600 font-heading">
+            -{currency}{totalSpent.toFixed(2)}
           </p>
         </div>
-        <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
-            {filterType === 'paid_by_me' ? 'Paid by You' : 'My True Share'}
+        <div className="bg-white border border-slate-200/80 p-4 sm:p-5 rounded-[2rem] shadow-sm">
+          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+            My Consumed Share
           </p>
-          <p className="text-lg font-black text-indigo-600 font-heading">
-            {currency}{(filterType === 'paid_by_me' ? totalMyPaidUpfront : totalMyConsumption).toFixed(2)}
+          <p className="text-xl sm:text-2xl font-black text-indigo-600 font-heading">
+            -{currency}{totalMyConsumption.toFixed(2)}
+          </p>
+        </div>
+        <div className="bg-white border border-slate-200/80 p-4 sm:p-5 rounded-[2rem] shadow-sm">
+          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+            Paid by You Upfront
+          </p>
+          <p className="text-xl sm:text-2xl font-black text-emerald-600 font-heading">
+            {currency}{totalMyPaidUpfront.toFixed(2)}
+          </p>
+        </div>
+        <div className="bg-white border border-slate-200/80 p-4 sm:p-5 rounded-[2rem] shadow-sm">
+          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+            Settlement Logs
+          </p>
+          <p className="text-xl sm:text-2xl font-black text-slate-900 font-heading">
+            {transactions.filter(t => t.type === 'settlement').length} {transactions.filter(t => t.type === 'settlement').length === 1 ? 'record' : 'records'}
           </p>
         </div>
       </div>
@@ -282,14 +323,14 @@ export default function History() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by title, payer, or category..."
-            className="w-full p-3.5 pl-11 pr-10 bg-white border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
+            className="w-full p-3.5 pl-11 pr-10 bg-white border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
               className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           )}
         </div>

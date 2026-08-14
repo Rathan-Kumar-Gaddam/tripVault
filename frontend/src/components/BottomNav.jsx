@@ -11,8 +11,8 @@ export default function BottomNav() {
   const isAdmin = myData?.role === 'admin';
 
   return (
-    <div className="fixed bottom-5 left-0 right-0 max-w-md mx-auto px-5 z-40 pointer-events-none">
-      <nav className="pointer-events-auto bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-[0_15px_35px_rgba(0,0,0,0.35)] px-4 py-2.5 flex justify-between items-center rounded-[2rem] text-white">
+    <div className="fixed bottom-4 left-3 right-3 sm:left-0 sm:right-0 max-w-md mx-auto z-40 pointer-events-none">
+      <nav className="pointer-events-auto bg-slate-900/95 backdrop-blur-2xl border border-white/10 shadow-[0_20px_45px_rgba(0,0,0,0.4)] px-3.5 sm:px-4 py-2 flex justify-between items-center rounded-[2rem] text-white">
         
         {/* Exit to My Trips */}
         <button 

@@ -14,11 +14,12 @@ import {
   HandCoins
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { DashboardSkeleton } from '../components/SkeletonLoader';
 
 export default function AddMember() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, currentTrip, transactions, fetchTripDetails, addMember, removeMember } = useTripStore();
+  const { user, currentTrip, transactions, fetchTripDetails, addMember, removeMember, isLoading } = useTripStore();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -28,8 +29,15 @@ export default function AddMember() {
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
+  const [fetchError, setFetchError] = useState(null);
+
   useEffect(() => {
-    fetchTripDetails(id);
+    if (!currentTrip || currentTrip._id !== id) {
+      setFetchError(null);
+      fetchTripDetails(id).catch((err) => {
+        setFetchError(err.response?.data?.message || err.message || 'Failed to load trip members');
+      });
+    }
   }, [id]);
 
   const handlePhoneChange = (e) => {
@@ -73,10 +81,13 @@ export default function AddMember() {
   const handleConfirmRemove = async () => {
     if (!memberToRemove || isRemoving) return;
 
+    const targetUid = memberToRemove.user?._id || memberToRemove.user;
+    const targetName = memberToRemove.user?.name || 'Companion';
+
     try {
       setIsRemoving(true);
-      await removeMember(id, memberToRemove.user._id);
-      toast.success(`${memberToRemove.user.name} removed from trip.`);
+      await removeMember(id, targetUid);
+      toast.success(`${targetName} removed from trip.`);
       setMemberToRemove(null);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to remove member.');
@@ -85,8 +96,26 @@ export default function AddMember() {
     }
   };
 
+  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
+    return <DashboardSkeleton />;
+  }
+
+  if (fetchError || !currentTrip) {
+    return (
+      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
+        <h2 className="text-xl font-bold text-slate-900 mb-2">{fetchError || 'Trip Not Found'}</h2>
+        <button
+          onClick={() => navigate('/')}
+          className="mt-4 px-6 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl"
+        >
+          ← Back to Trips
+        </button>
+      </div>
+    );
+  }
+
   const currency = currentTrip?.currency || '₹';
-  const myMembership = currentTrip?.members?.find(m => (m.user?._id || m.user) === user?._id);
+  const myMembership = currentTrip?.members?.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
   const isAdmin = myMembership?.role === 'admin';
 
   const { companionDebts } = computeBilateralDebts(currentTrip?.members, transactions, user?._id);
@@ -99,98 +128,101 @@ export default function AddMember() {
   });
 
   return (
-    <div className="p-6 pb-20 relative">
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28 sm:pb-24 relative">
       {/* Header */}
-      <header className="flex justify-between items-center mb-6">
+      <header className="flex justify-between items-center mb-6 sm:mb-8">
         <button 
           onClick={() => navigate(`/trip/${id}`)} 
-          className="p-2.5 bg-white border border-gray-200 rounded-2xl text-gray-600 hover:text-gray-900 shadow-sm active:scale-95 transition-transform"
+          className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-transform"
         >
           <ArrowLeft size={20} />
         </button>
         <div className="text-center">
-          <h1 className="text-xl font-bold text-gray-900">Trip Companions</h1>
-          <p className="text-xs text-gray-500 font-medium">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-heading">Trip Companions</h1>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">
             {currentTrip?.members?.length || 0} {(currentTrip?.members?.length === 1) ? 'Companion' : 'Companions'}
           </p>
         </div>
         <div className="w-10"></div>
       </header>
 
-      {/* Add New Member Section (Only for Admin) */}
-      {isAdmin && (
-        <section className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm mb-8">
-          <div className="flex items-center gap-2.5 mb-4">
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-              <UserPlus size={18} />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-gray-900">Invite New Companion</h2>
-              <p className="text-xs text-gray-400">Add by name and 10-digit mobile number</p>
-            </div>
-          </div>
-
-          <form onSubmit={handleAddSubmit} className="flex flex-col gap-3.5">
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text" 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Friend's Full Name" 
-                required 
-                disabled={isSubmitting}
-                className="w-full p-3.5 pl-11 rounded-2xl border border-gray-200 bg-gray-50/50 font-medium text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-gray-400 disabled:opacity-70" 
-              />
+      {/* Main Content Grid (2 Columns on Desktop for Admin) */}
+      <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-12' : ''} gap-6 items-start`}>
+        
+        {/* Add New Member Section (Only for Admin) */}
+        {isAdmin && (
+          <section className="lg:col-span-5 bg-white p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <UserPlus size={20} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Invite New Companion</h2>
+                <p className="text-xs text-slate-400">Add by name and 10-digit mobile number</p>
+              </div>
             </div>
 
-            <div>
+            <form onSubmit={handleAddSubmit} className="flex flex-col gap-4">
               <div className="relative">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
-                  type="tel" 
-                  value={phone}
-                  onChange={handlePhoneChange}
-                  maxLength={10}
-                  placeholder="10-digit Phone (e.g. 9845201587)" 
+                  type="text" 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Friend's Full Name" 
                   required 
                   disabled={isSubmitting}
-                  className="w-full p-3.5 pl-11 rounded-2xl border border-gray-200 bg-gray-50/50 font-medium tracking-wide text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-gray-400 disabled:opacity-70" 
+                  className="w-full p-4 pl-11 rounded-2xl border border-slate-200 bg-slate-50/50 font-medium text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
                 />
               </div>
-              <div className="flex justify-between items-center mt-1 px-1 text-xs font-medium">
-                <span className="text-gray-400 text-[11px]">Can login immediately with phone</span>
-                <span className={phone.length === 10 ? 'text-emerald-600 font-bold text-[11px]' : 'text-gray-400 text-[11px]'}>
-                  {phone.length}/10 digits
-                </span>
+
+              <div>
+                <div className="relative">
+                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="tel" 
+                    value={phone}
+                    onChange={handlePhoneChange}
+                    maxLength={10}
+                    placeholder="10-digit Phone (e.g. 9845201587)" 
+                    required 
+                    disabled={isSubmitting}
+                    className="w-full p-4 pl-11 rounded-2xl border border-slate-200 bg-slate-50/50 font-medium tracking-wide text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
+                  />
+                </div>
+                <div className="flex justify-between items-center mt-1 px-1 text-xs font-medium">
+                  <span className="text-slate-400 text-[11px]">Can login immediately with phone</span>
+                  <span className={phone.length === 10 ? 'text-emerald-600 font-bold text-[11px]' : 'text-slate-400 text-[11px]'}>
+                    {phone.length}/10 digits
+                  </span>
+                </div>
               </div>
+
+              <button 
+                type="submit" 
+                disabled={isSubmitting || phone.length !== 10 || !name.trim()}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold text-sm shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all mt-1 flex items-center justify-center gap-2"
+              >
+                <UserPlus size={18} />
+                {isSubmitting ? 'Adding Member...' : 'Add Member'}
+              </button>
+            </form>
+          </section>
+        )}
+
+        {/* Current Members List */}
+        <section className={isAdmin ? 'lg:col-span-7' : 'w-full'}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Users size={18} className="text-slate-400" />
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Trip Companions ({currentTrip?.members?.length || 0})
+              </h2>
             </div>
-
-            <button 
-              type="submit" 
-              disabled={isSubmitting || phone.length !== 10 || !name.trim()}
-              className="w-full bg-indigo-600 text-white py-3.5 rounded-2xl font-bold text-sm shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all mt-1 flex items-center justify-center gap-2"
-            >
-              <UserPlus size={16} />
-              {isSubmitting ? 'Adding Member...' : 'Add Member'}
-            </button>
-          </form>
-        </section>
-      )}
-
-      {/* Current Members List */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Users size={18} className="text-gray-400" />
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
-              Trip Companions ({currentTrip?.members?.length || 0})
-            </h2>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-3">
-          {currentTrip?.members?.map((member) => {
+          <div className="flex flex-col gap-3">
+            {currentTrip?.members?.map((member) => {
             const isMemberAdmin = member.role === 'admin';
             const isSelf = (member.user?._id || member.user) === user?._id;
             const mUser = member.user || member;
@@ -265,6 +297,7 @@ export default function AddMember() {
           })}
         </div>
       </section>
+    </div>
 
       {/* Delete Confirmation Modal */}
       {memberToRemove && (

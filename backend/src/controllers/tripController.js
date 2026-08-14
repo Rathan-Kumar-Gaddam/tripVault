@@ -140,7 +140,11 @@ export const getTripById = async (req, res) => {
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     // Ensure the requester is part of the trip
-    const isMember = trip.members.some((m) => m.user._id.toString() === req.user._id.toString());
+    const isMember = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId && uId === req.user._id.toString();
+    });
+    
     if (!isMember) return res.status(403).json({ message: 'Access denied. You must join this trip first.' });
 
     res.json(trip);
@@ -172,7 +176,10 @@ export const updateTrip = async (req, res) => {
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     // Validate requester is member (or admin)
-    const isMember = trip.members.some((m) => m.user.toString() === requesterId.toString());
+    const isMember = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId && uId === requesterId.toString();
+    });
     if (!isMember) return res.status(403).json({ message: 'Access denied' });
 
     if (name !== undefined && name.trim()) trip.name = name.trim();

@@ -14,13 +14,16 @@ export const syncTripBalances = async (tripId) => {
   // Initialize balance for all members
   const memberBalances = {};
   trip.members.forEach((m) => {
-    memberBalances[m.user.toString()] = 0;
+    const uid = (m.user?._id || m.user)?.toString();
+    if (uid) memberBalances[uid] = 0;
   });
 
   let totalTripExpenses = 0;
 
   transactions.forEach((tx) => {
-    const payerId = (tx.payer || tx.createdBy).toString();
+    const payerId = (tx.payer?._id || tx.payer || tx.createdBy?._id || tx.createdBy)?.toString();
+    if (!payerId) return;
+
     const isExpense = tx.type === 'expense';
     const isSettlement = tx.type === 'settlement';
     const isContribution = tx.type === 'contribution';
@@ -38,7 +41,9 @@ export const syncTripBalances = async (tripId) => {
         }));
 
     splits.forEach((split) => {
-      const debtorId = (split.user?._id || split.user).toString();
+      const debtorId = (split.user?._id || split.user)?.toString();
+      if (!debtorId) return;
+
       const splitAmount = Number(split.amount) || 0;
 
       if (debtorId !== payerId) {
@@ -56,8 +61,10 @@ export const syncTripBalances = async (tripId) => {
 
   // Assign calculated balances back to trip members
   trip.members.forEach((m) => {
-    const uId = m.user.toString();
-    m.balance = Math.round((memberBalances[uId] || 0) * 100) / 100;
+    const uId = (m.user?._id || m.user)?.toString();
+    if (uId) {
+      m.balance = Math.round((memberBalances[uId] || 0) * 100) / 100;
+    }
   });
 
   trip.totalVault = Math.round(totalTripExpenses * 100) / 100;
@@ -204,7 +211,10 @@ export const getTransactions = async (req, res) => {
     const trip = await Trip.findById(tripId);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
-    const isMember = trip.members.some((m) => m.user.toString() === req.user._id.toString());
+    const isMember = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId && uId === req.user._id.toString();
+    });
     if (!isMember) return res.status(403).json({ message: 'Access denied' });
 
     const transactions = await Transaction.find({ tripId })
@@ -238,10 +248,11 @@ export const deleteTransaction = async (req, res) => {
     }
 
     // Check if user is trip admin or the creator of the transaction
-    const isCreator = transaction.createdBy.toString() === userId.toString();
-    const isAdmin = trip.members.some(
-      (m) => m.user.toString() === userId.toString() && m.role === 'admin'
-    );
+    const isCreator = (transaction.createdBy?._id || transaction.createdBy)?.toString() === userId.toString();
+    const isAdmin = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId === userId.toString() && m.role === 'admin';
+    });
 
     if (!isCreator && !isAdmin) {
       return res.status(403).json({ message: 'You do not have permission to delete this transaction.' });

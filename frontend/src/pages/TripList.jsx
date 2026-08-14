@@ -106,7 +106,7 @@ export default function TripsList() {
   }
 
   return (
-    <div className="p-6 pb-24">
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28">
       
       {/* Top Header */}
       <header className="flex justify-between items-center mb-6">
@@ -124,19 +124,19 @@ export default function TripsList() {
           </button>
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight font-heading">My Trips</h1>
-              <Sparkles size={16} className="text-amber-400" />
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-heading">My Trips</h1>
+              <Sparkles size={18} className="text-amber-400" />
             </div>
-            <p className="text-slate-500 text-xs font-semibold">Hello, {user?.name?.split(' ')[0]}</p>
+            <p className="text-slate-500 text-xs sm:text-sm font-semibold">Hello, {user?.name?.split(' ')[0]}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-indigo-600 shadow-sm active:scale-90 transition-all disabled:opacity-50"
+            className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-indigo-600 shadow-sm active:scale-90 transition-all disabled:opacity-50"
             title="Sync Trips"
           >
             <RefreshCw size={18} className={isRefreshing ? 'animate-spin text-indigo-600' : ''} />
@@ -145,7 +145,7 @@ export default function TripsList() {
           <button 
             onClick={() => navigate('/profile')} 
             title="Profile & Settings" 
-            className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-all"
+            className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-all"
           >
             <Settings size={18} />
           </button>
@@ -153,28 +153,28 @@ export default function TripsList() {
       </header>
 
       {/* Portfolio Quick Overview Banner */}
-      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-[2rem] p-5 mb-6 shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden">
-        <div className="absolute -right-8 -top-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none"></div>
+      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-[2.5rem] p-6 sm:p-7 mb-6 shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden">
+        <div className="absolute -right-8 -top-8 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
         
-        <div className="flex justify-between items-start mb-4">
+        <div className="flex justify-between items-start mb-5">
           <div>
             <p className="text-indigo-200 text-xs font-bold tracking-wider uppercase">Active Vaults</p>
-            <h2 className="text-3xl font-extrabold tracking-tight mt-1 font-heading">
+            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-1 font-heading">
               {trips.length} {trips.length === 1 ? 'Trip' : 'Trips'}
             </h2>
           </div>
-          <div className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10">
-            <Compass size={24} className="text-indigo-300" />
+          <div className="p-3.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10">
+            <Compass size={28} className="text-indigo-300" />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/10 text-xs">
-          <div className="flex items-center gap-2">
-            <Wallet size={14} className="text-emerald-400" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-white/10 text-xs">
+          <div className="flex items-center gap-2 bg-white/5 p-2.5 rounded-xl">
+            <Wallet size={16} className="text-emerald-400 shrink-0" />
             <span className="text-slate-300 font-medium">{trips.length} Total Vaults</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Users size={14} className="text-indigo-300" />
+          <div className="flex items-center gap-2 bg-white/5 p-2.5 rounded-xl">
+            <Users size={16} className="text-indigo-300 shrink-0" />
             <span className="text-slate-300 font-medium">{totalCompanions} Companions</span>
           </div>
         </div>
@@ -182,21 +182,21 @@ export default function TripsList() {
 
       {/* Instant Search Bar if multiple trips exist */}
       {trips.length > 2 && (
-        <div className="relative mb-4">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+        <div className="relative mb-6">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search trips by destination name..."
-            className="w-full p-3 pl-11 pr-10 bg-white border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
+            className="w-full p-3.5 pl-11 pr-10 bg-white border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
               className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           )}
         </div>
@@ -206,49 +206,49 @@ export default function TripsList() {
       {!showForm ? (
         <button 
           onClick={() => setShowForm(true)} 
-          className="w-full py-4 px-5 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all flex items-center justify-between mb-6 group"
+          className="w-full py-4 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm sm:text-base shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all flex items-center justify-between mb-8 group"
         >
           <div className="flex items-center gap-3">
-            <div className="p-1.5 bg-white/20 rounded-xl">
-              <Plus size={18} strokeWidth={3} />
+            <div className="p-2 bg-white/20 rounded-xl">
+              <Plus size={20} strokeWidth={3} />
             </div>
             <span>Plan a New Trip</span>
           </div>
-          <ArrowRight size={18} className="transform group-hover:translate-x-1 transition-transform" />
+          <ArrowRight size={20} className="transform group-hover:translate-x-1.5 transition-transform" />
         </button>
       ) : (
-        <form onSubmit={handleCreate} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/80 mb-6 flex flex-col gap-4 animate-in fade-in duration-200">
+        <form onSubmit={handleCreate} className="bg-white p-6 sm:p-7 rounded-[2.5rem] shadow-sm border border-slate-200/80 mb-8 flex flex-col gap-4 animate-in fade-in duration-200">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                <Plane size={18} />
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <Plane size={20} />
               </div>
-              <h2 className="font-bold text-slate-900 text-sm">Create New Trip Vault</h2>
+              <h2 className="font-bold text-slate-900 text-sm sm:text-base">Create New Trip Vault</h2>
             </div>
             <button 
               type="button" 
               onClick={() => setShowForm(false)} 
-              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
+              className="p-2 text-slate-400 hover:text-slate-600 rounded-xl"
             >
-              <X size={18} />
+              <X size={20} />
             </button>
           </div>
 
           {/* Quick preset chips */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
             {PRESET_DESTINATIONS.map((preset) => (
               <button
                 key={preset.name}
                 type="button"
                 onClick={() => { setTripName(preset.name); setCurrency(preset.currency); }}
-                className="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 whitespace-nowrap active:scale-95 transition-all"
+                className="px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 whitespace-nowrap active:scale-95 transition-all"
               >
                 {preset.name}
               </button>
             ))}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-3">
             <input 
               type="text"
               value={tripName}
@@ -256,13 +256,13 @@ export default function TripsList() {
               placeholder="Trip Name (e.g. Goa 2026)" 
               required 
               disabled={isCreating}
-              className="flex-1 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
+              className="flex-1 p-4 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
             />
             <select 
               value={currency} 
               onChange={(e) => setCurrency(e.target.value)}
               disabled={isCreating}
-              className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
+              className="p-4 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer sm:w-36"
             >
               <option value="₹">₹ INR</option>
               <option value="$">$ USD</option>
@@ -272,19 +272,19 @@ export default function TripsList() {
             </select>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-3 mt-1">
             <button 
               type="button" 
               onClick={() => setShowForm(false)} 
               disabled={isCreating}
-              className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold text-sm rounded-xl hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+              className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold text-sm rounded-2xl hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
             >
               Cancel
             </button>
             <button 
               type="submit" 
               disabled={isCreating || !tripName.trim()}
-              className="flex-1 py-3 bg-indigo-600 text-white font-bold text-sm rounded-xl shadow-md shadow-indigo-600/25 active:scale-95 transition disabled:opacity-50"
+              className="flex-1 py-3.5 bg-indigo-600 text-white font-bold text-sm rounded-2xl shadow-md shadow-indigo-600/25 active:scale-95 transition disabled:opacity-50"
             >
               {isCreating ? 'Creating...' : 'Save Trip'}
             </button>
@@ -292,10 +292,10 @@ export default function TripsList() {
         </form>
       )}
 
-      {/* Trips Cards List */}
-      <div className="flex flex-col gap-4">
+      {/* Trips Cards Responsive Grid */}
+      <div>
         {filteredTrips.length === 0 ? (
-          <div className="bg-white border border-slate-200/80 rounded-[2rem] p-8 text-center shadow-sm mt-4">
+          <div className="bg-white border border-slate-200/80 rounded-[2.5rem] p-10 text-center shadow-sm mt-4">
             <div className="w-16 h-16 rounded-3xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4">
               <Compass size={32} />
             </div>
@@ -315,7 +315,8 @@ export default function TripsList() {
             )}
           </div>
         ) : (
-          filteredTrips.map((trip) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4.5">
+            {filteredTrips.map((trip) => {
             const isAdmin = trip.members?.some(m => m.user?._id === user?._id && m.role === 'admin');
             const memberCount = trip.members?.length || 0;
 
@@ -394,8 +395,9 @@ export default function TripsList() {
                 </div>
               </div>
             );
-          })
-        )}
+          })}
+        </div>
+      )}
       </div>
 
       {/* Delete Confirmation Modal */}

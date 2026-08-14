@@ -23,6 +23,7 @@ import {
   Send
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { DashboardSkeleton } from '../components/SkeletonLoader';
 
 const CATEGORIES = [
   { id: 'Food & Dining', label: 'Food & Dining', icon: Utensils, emoji: '🍽️' },
@@ -39,7 +40,7 @@ export default function AddTransaction() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, currentTrip, fetchTripDetails, logTransaction, createFundRequest } = useTripStore();
+  const { user, currentTrip, fetchTripDetails, logTransaction, createFundRequest, isLoading } = useTripStore();
 
   const queryMode = searchParams.get('mode');
   const initialMode = queryMode === 'settle' ? 'settlement' : (queryMode === 'ask' ? 'ask' : 'expense');
@@ -70,10 +71,14 @@ export default function AddTransaction() {
   const [settleNote, setSettleNote] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
     if (!currentTrip || currentTrip._id !== id) {
-      fetchTripDetails(id);
+      setFetchError(null);
+      fetchTripDetails(id).catch((err) => {
+        setFetchError(err.response?.data?.message || err.message || 'Failed to load trip details');
+      });
     }
   }, [id]);
 
@@ -85,6 +90,24 @@ export default function AddTransaction() {
       setSettlePayer(user._id);
     }
   }, [user]);
+
+  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
+    return <DashboardSkeleton />;
+  }
+
+  if (fetchError || !currentTrip) {
+    return (
+      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
+        <h2 className="text-xl font-bold text-slate-900 mb-2">{fetchError || 'Trip Not Found'}</h2>
+        <button
+          onClick={() => navigate('/')}
+          className="mt-4 px-6 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl"
+        >
+          ← Back to Trips
+        </button>
+      </div>
+    );
+  }
 
   const currency = currentTrip?.currency || '₹';
   const members = currentTrip?.members || [];
@@ -278,37 +301,37 @@ export default function AddTransaction() {
   };
 
   return (
-    <div className="p-6 pb-28">
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28 sm:pb-24">
       {/* Top Header */}
-      <header className="flex justify-between items-center mb-6">
+      <header className="flex justify-between items-center mb-6 sm:mb-8">
         <button 
           onClick={() => navigate(`/trip/${id}`)} 
-          className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-transform"
+          className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-transform"
         >
           <ArrowLeft size={20} />
         </button>
         <div className="text-center">
-          <h1 className="text-xl font-bold text-slate-900 font-heading">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-heading">
             {tab === 'expense' ? 'Log Expense' : tab === 'ask' ? 'Ask Companion' : 'Settle Up'}
           </h1>
-          <p className="text-xs text-slate-500 font-medium">{currentTrip?.name}</p>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">{currentTrip?.name}</p>
         </div>
         <div className="w-10"></div>
       </header>
 
       {/* Main Mode Switcher: Expense vs Ask Funds vs Settlement */}
-      <div className="flex p-1 bg-slate-200/70 rounded-2xl mb-5 gap-1">
+      <div className="flex p-1.5 bg-slate-200/70 rounded-2xl mb-6 gap-1.5 max-w-xl mx-auto w-full">
         <button 
           type="button" 
           disabled={isSubmitting}
           onClick={() => setTab('expense')} 
-          className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+          className={`flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
             tab === 'expense' 
               ? 'bg-white shadow-sm text-slate-900' 
               : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <ReceiptText size={13} />
+          <ReceiptText size={15} />
           <span>Expense</span>
         </button>
 
@@ -316,13 +339,13 @@ export default function AddTransaction() {
           type="button" 
           disabled={isSubmitting}
           onClick={() => setTab('ask')} 
-          className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+          className={`flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
             tab === 'ask' 
               ? 'bg-amber-500 shadow-md shadow-amber-500/20 text-white' 
               : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <HelpCircle size={13} />
+          <HelpCircle size={15} />
           <span>Ask Funds</span>
         </button>
 
@@ -330,311 +353,331 @@ export default function AddTransaction() {
           type="button" 
           disabled={isSubmitting}
           onClick={() => setTab('settlement')} 
-          className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+          className={`flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
             tab === 'settlement' 
               ? 'bg-emerald-600 shadow-md shadow-emerald-600/20 text-white' 
               : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <HandCoins size={13} />
+          <HandCoins size={15} />
           <span>Settle</span>
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         
-        {/* ===================== EXPENSE MODE ===================== */}
+        {/* ===================== EXPENSE MODE (Responsive 2-Column Grid on Desktop) ===================== */}
         {tab === 'expense' && (
-          <>
-            {/* Who Paid Selector */}
-            <div className="bg-white p-4 rounded-[2rem] border border-slate-200/80 shadow-sm">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2 px-1">
-                Who Paid for this?
-              </label>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                {members.map((m) => {
-                  const mUser = m.user || m;
-                  const isSelected = (mUser?._id || mUser) === payerId;
-                  const isSelf = (mUser?._id || mUser) === user?._id;
-
-                  return (
-                    <button
-                      key={mUser?._id || mUser}
-                      type="button"
-                      onClick={() => setPayerId(mUser?._id || mUser)}
-                      className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border transition-all shrink-0 active:scale-95 ${
-                        isSelected 
-                          ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20 text-indigo-900 shadow-sm' 
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-[10px] font-bold overflow-hidden">
-                        {mUser?.avatar ? (
-                          <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
-                        ) : (
-                          mUser?.name?.charAt(0).toUpperCase() || '?'
-                        )}
-                      </div>
-                      <span className="text-xs font-bold whitespace-nowrap">
-                        {mUser?.name} {isSelf ? '(You)' : ''}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Hero Amount Input Card */}
-            <div className="bg-white p-5 rounded-[2rem] border border-slate-200/80 shadow-sm flex flex-col items-center">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Total Expense Amount
-              </label>
-
-              <div className="relative flex items-center justify-center w-full my-2">
-                <span className="text-3xl font-bold text-slate-400 mr-2 font-heading">{currency}</span>
-                <input 
-                  name="amount" 
-                  type="number" 
-                  step="0.01" 
-                  min="0.01" 
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00" 
-                  required 
-                  disabled={isSubmitting}
-                  className="text-4xl sm:text-5xl font-black text-slate-900 text-center outline-none w-52 bg-transparent tracking-tight font-heading placeholder:text-slate-300" 
-                />
-              </div>
-
-              {/* Quick amount increment chips */}
-              <div className="flex gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
-                {QUICK_AMOUNTS.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => handleQuickAdd(q)}
-                    className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-600 active:scale-95 transition-all"
-                  >
-                    +{currency}{q}
-                  </button>
-                ))}
-                {numericAmount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setAmount('')}
-                    className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-400 active:scale-95 transition-all"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Categories Grid */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">
-                Category
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {CATEGORIES.map((cat) => {
-                  const isSelected = category === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => { setCategory(cat.id); if (!description) setDescription(cat.label); }}
-                      className={`p-2.5 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1 transition-all active:scale-95 ${
-                        isSelected 
-                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm ring-2 ring-indigo-500/20' 
-                          : 'bg-white border-slate-200/80 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="text-base">{cat.emoji}</span>
-                      <span className="text-[10px] truncate w-full text-center">{cat.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Description Input */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block px-1">
-                Notes & Description
-              </label>
-              <input 
-                name="description" 
-                type="text" 
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g. Seafood Dinner, Beach Scooters, Resort Stay" 
-                required 
-                disabled={isSubmitting}
-                className="w-full p-4 font-medium text-sm rounded-2xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
-              />
-            </div>
-
-            {/* Split Method Box */}
-            <div className="bg-white p-5 border border-slate-200/80 rounded-[2rem] shadow-sm">
-              <div className="flex justify-between items-center mb-3">
-                <p className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <Users size={14} className="text-indigo-600" />
-                  <span>Split Options</span>
-                </p>
-                {numericAmount > 0 && !isCustomExact && (
-                  <span className="text-xs font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-xl flex items-center gap-1">
-                    <Calculator size={12} />
-                    <span>{currency}{perPersonShare.toFixed(2)} / person</span>
-                  </span>
-                )}
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* Left Column: Details, Amount, Payer & Category */}
+            <div className="lg:col-span-6 flex flex-col gap-5">
               
-              <select 
-                value={splitMode} 
-                disabled={isSubmitting}
-                onChange={(e) => { 
-                  setSplitMode(e.target.value); 
-                  setSelectedUser(''); 
-                  setSelectedUsers([]); 
-                  setIsCustomExact(false);
-                }} 
-                className="w-full p-3.5 font-bold text-xs rounded-xl bg-slate-50 border border-slate-200 mb-3 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
-              >
-                <option value="all">Everyone in Trip (Split Equally)</option>
-                <option value="individual">Specific Companion (Paid For 1 Person)</option>
-                <option value="custom">Custom Selection (Pick Friends)</option>
-              </select>
+              {/* Who Paid Selector */}
+              <div className="bg-white p-5 rounded-[2.5rem] border border-slate-200/80 shadow-sm">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2.5 px-1">
+                  Who Paid for this?
+                </label>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {members.map((m) => {
+                    const mUser = m.user || m;
+                    const isSelected = (mUser?._id || mUser) === payerId;
+                    const isSelf = (mUser?._id || mUser) === user?._id;
 
-              {/* Individual Split Companion Picker */}
-              {splitMode === 'individual' && (
-                <div className="flex flex-col gap-2 mt-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Select Who You Paid For:
-                  </label>
-                  <div className="grid grid-cols-1 gap-2">
-                    {members.map(m => {
-                      const mUser = m.user || m;
-                      const uid = mUser?._id || mUser;
-                      const isSelected = selectedUser === uid;
-                      const isSelf = uid === user?._id;
-
-                      return (
-                        <div 
-                          key={uid}
-                          onClick={() => setSelectedUser(uid)}
-                          className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all border ${
-                            isSelected ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-slate-50 border-slate-100 hover:bg-slate-100/70'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold overflow-hidden">
-                              {mUser?.avatar ? (
-                                <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
-                              ) : (
-                                mUser?.name?.charAt(0).toUpperCase()
-                              )}
-                            </div>
-                            <span className={`font-bold text-xs ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>
-                              {mUser.name} {isSelf ? '(You)' : ''}
-                            </span>
-                          </div>
-                          {isSelected ? (
-                            <div className="bg-indigo-600 text-white rounded-full p-1"><Check size={12} strokeWidth={4}/></div>
+                    return (
+                      <button
+                        key={mUser?._id || mUser}
+                        type="button"
+                        onClick={() => setPayerId(mUser?._id || mUser)}
+                        className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border transition-all shrink-0 active:scale-95 ${
+                          isSelected 
+                            ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20 text-indigo-900 shadow-sm' 
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-[10px] font-bold overflow-hidden">
+                          {mUser?.avatar ? (
+                            <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
                           ) : (
-                            <Circle size={18} className="text-slate-300" />
+                            mUser?.name?.charAt(0).toUpperCase() || '?'
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
+                        <span className="text-xs font-bold whitespace-nowrap">
+                          {mUser?.name} {isSelf ? '(You)' : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
 
-              {/* Custom Split UI */}
-              {splitMode === 'custom' && (
-                <div className="flex flex-col gap-3 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[11px] font-bold text-slate-500">Pick Included Companions:</span>
+              {/* Hero Amount Input Card */}
+              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col items-center">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Total Expense Amount
+                </label>
+
+                <div className="relative flex items-center justify-center w-full my-2">
+                  <span className="text-3xl sm:text-4xl font-bold text-slate-400 mr-2 font-heading">{currency}</span>
+                  <input 
+                    name="amount" 
+                    type="number" 
+                    step="0.01" 
+                    min="0.01" 
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00" 
+                    required 
+                    disabled={isSubmitting}
+                    className="text-4xl sm:text-5xl font-black text-slate-900 text-center outline-none w-56 bg-transparent tracking-tight font-heading placeholder:text-slate-300" 
+                  />
+                </div>
+
+                {/* Quick amount increment chips */}
+                <div className="flex gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
+                  {QUICK_AMOUNTS.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => handleQuickAdd(q)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-600 active:scale-95 transition-all"
+                    >
+                      +{currency}{q}
+                    </button>
+                  ))}
+                  {numericAmount > 0 && (
                     <button
                       type="button"
-                      onClick={() => setIsCustomExact(!isCustomExact)}
-                      className="text-[11px] font-bold text-indigo-600 hover:underline"
+                      onClick={() => setAmount('')}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-slate-200/60 rounded-xl text-xs font-bold text-slate-400 active:scale-95 transition-all"
                     >
-                      {isCustomExact ? 'Switch to Equal Split' : 'Enter Exact Amounts'}
+                      Clear
                     </button>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    {members.map(m => {
-                      const mUser = m.user || m;
-                      const uid = mUser?._id || mUser;
-                      const isSelected = selectedUsers.includes(uid);
-
-                      return (
-                        <div 
-                          key={uid} 
-                          className={`flex items-center justify-between p-3 rounded-2xl transition-all border ${
-                            isSelected ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-slate-50 border-slate-100'
-                          }`}
-                        >
-                          <div 
-                            onClick={() => handleToggleUser(uid)}
-                            className="flex items-center gap-2.5 cursor-pointer flex-1"
-                          >
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold overflow-hidden">
-                              {mUser?.avatar ? (
-                                <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
-                              ) : (
-                                mUser?.name?.charAt(0).toUpperCase()
-                              )}
-                            </div>
-                            <span className={`font-bold text-xs ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>
-                              {mUser.name}
-                            </span>
-                          </div>
-
-                          {isSelected && isCustomExact ? (
-                            <div className="flex items-center gap-1 w-28">
-                              <span className="text-xs font-bold text-slate-400">{currency}</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                placeholder="0.00"
-                                value={customAmounts[uid] || ''}
-                                onChange={(e) => handleCustomAmountChange(uid, e.target.value)}
-                                className="w-full p-2 text-xs font-bold bg-white border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-right"
-                              />
-                            </div>
-                          ) : (
-                            <div 
-                              onClick={() => handleToggleUser(uid)}
-                              className="cursor-pointer p-1"
-                            >
-                              {isSelected ? (
-                                <div className="bg-indigo-600 text-white rounded-full p-1"><Check size={12} strokeWidth={4}/></div>
-                              ) : (
-                                <Circle size={18} className="text-slate-300" />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {isCustomExact && numericAmount > 0 && (
-                    <div className={`p-3 rounded-2xl text-xs font-bold flex justify-between items-center ${
-                      Math.abs(customDifference) <= 0.05 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
-                    }`}>
-                      <span>Allocated: {currency}{customSum.toFixed(2)} of {currency}{numericAmount.toFixed(2)}</span>
-                      <span>{Math.abs(customDifference) <= 0.05 ? '✅ Balanced' : `Remaining: ${currency}${customDifference.toFixed(2)}`}</span>
-                    </div>
                   )}
                 </div>
-              )}
+              </div>
+
+              {/* Categories Grid */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">
+                  Category
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 gap-2">
+                  {CATEGORIES.map((cat) => {
+                    const isSelected = category === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => { setCategory(cat.id); if (!description) setDescription(cat.label); }}
+                        className={`p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1 transition-all active:scale-95 ${
+                          isSelected 
+                            ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm ring-2 ring-indigo-500/20' 
+                            : 'bg-white border-slate-200/80 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="text-lg">{cat.emoji}</span>
+                        <span className="text-[11px] truncate w-full text-center">{cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Description Input */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block px-1">
+                  Notes & Description
+                </label>
+                <input 
+                  name="description" 
+                  type="text" 
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Seafood Dinner, Beach Scooters, Resort Stay" 
+                  required 
+                  disabled={isSubmitting}
+                  className="w-full p-4 font-medium text-sm rounded-2xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
+                />
+              </div>
             </div>
-          </>
+
+            {/* Right Column: Split Options Box & Submit */}
+            <div className="lg:col-span-6 flex flex-col gap-5">
+              <div className="bg-white p-6 border border-slate-200/80 rounded-[2.5rem] shadow-sm flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <p className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users size={16} className="text-indigo-600" />
+                    <span>Split Options</span>
+                  </p>
+                  {numericAmount > 0 && !isCustomExact && (
+                    <span className="text-xs font-extrabold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-xl flex items-center gap-1">
+                      <Calculator size={13} />
+                      <span>{currency}{perPersonShare.toFixed(2)} / person</span>
+                    </span>
+                  )}
+                </div>
+                
+                <select 
+                  value={splitMode} 
+                  disabled={isSubmitting}
+                  onChange={(e) => { 
+                    setSplitMode(e.target.value); 
+                    setSelectedUser(''); 
+                    setSelectedUsers([]); 
+                    setIsCustomExact(false);
+                  }} 
+                  className="w-full p-4 font-bold text-xs sm:text-sm rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
+                >
+                  <option value="all">Everyone in Trip (Split Equally)</option>
+                  <option value="individual">Specific Companion (Paid For 1 Person)</option>
+                  <option value="custom">Custom Selection (Pick Friends)</option>
+                </select>
+
+                {/* Individual Split Companion Picker */}
+                {splitMode === 'individual' && (
+                  <div className="flex flex-col gap-2 mt-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Select Who You Paid For:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
+                      {members.map(m => {
+                        const mUser = m.user || m;
+                        const uid = mUser?._id || mUser;
+                        const isSelected = selectedUser === uid;
+                        const isSelf = uid === user?._id;
+
+                        return (
+                          <div 
+                            key={uid}
+                            onClick={() => setSelectedUser(uid)}
+                            className={`flex items-center justify-between p-3.5 rounded-2xl cursor-pointer transition-all border ${
+                              isSelected ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-slate-50 border-slate-100 hover:bg-slate-100/70'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold overflow-hidden">
+                                {mUser?.avatar ? (
+                                  <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  mUser?.name?.charAt(0).toUpperCase()
+                                )}
+                              </div>
+                              <span className={`font-bold text-xs ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                {mUser.name} {isSelf ? '(You)' : ''}
+                              </span>
+                            </div>
+                            {isSelected ? (
+                              <div className="bg-indigo-600 text-white rounded-full p-1"><Check size={12} strokeWidth={4}/></div>
+                            ) : (
+                              <Circle size={18} className="text-slate-300" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Custom Split UI */}
+                {splitMode === 'custom' && (
+                  <div className="flex flex-col gap-3 mt-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-bold text-slate-500">Pick Included Companions:</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomExact(!isCustomExact)}
+                        className="text-[11px] font-bold text-indigo-600 hover:underline"
+                      >
+                        {isCustomExact ? 'Switch to Equal Split' : 'Enter Exact Amounts'}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      {members.map(m => {
+                        const mUser = m.user || m;
+                        const uid = mUser?._id || mUser;
+                        const isSelected = selectedUsers.includes(uid);
+
+                        return (
+                          <div 
+                            key={uid} 
+                            className={`flex items-center justify-between p-3 rounded-2xl transition-all border ${
+                              isSelected ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-slate-50 border-slate-100'
+                            }`}
+                          >
+                            <div 
+                              onClick={() => handleToggleUser(uid)}
+                              className="flex items-center gap-2.5 cursor-pointer flex-1"
+                            >
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold overflow-hidden">
+                                {mUser?.avatar ? (
+                                  <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  mUser?.name?.charAt(0).toUpperCase()
+                                )}
+                              </div>
+                              <span className={`font-bold text-xs ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                {mUser.name}
+                              </span>
+                            </div>
+
+                            {isSelected && isCustomExact ? (
+                              <div className="flex items-center gap-1 w-28">
+                                <span className="text-xs font-bold text-slate-400">{currency}</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  value={customAmounts[uid] || ''}
+                                  onChange={(e) => handleCustomAmountChange(uid, e.target.value)}
+                                  className="w-full p-2 text-xs font-bold bg-white border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-right"
+                                />
+                              </div>
+                            ) : (
+                              <div 
+                                onClick={() => handleToggleUser(uid)}
+                                className="cursor-pointer p-1"
+                              >
+                                {isSelected ? (
+                                  <div className="bg-indigo-600 text-white rounded-full p-1"><Check size={12} strokeWidth={4}/></div>
+                                ) : (
+                                  <Circle size={18} className="text-slate-300" />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {isCustomExact && numericAmount > 0 && (
+                      <div className={`p-3 rounded-2xl text-xs font-bold flex justify-between items-center ${
+                        Math.abs(customDifference) <= 0.05 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                      }`}>
+                        <span>Allocated: {currency}{customSum.toFixed(2)} of {currency}{numericAmount.toFixed(2)}</span>
+                        <span>{Math.abs(customDifference) <= 0.05 ? '✅ Balanced' : `Remaining: ${currency}${customDifference.toFixed(2)}`}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button for Expense */}
+              <button 
+                type="submit" 
+                disabled={isSubmitting || numericAmount <= 0}
+                className="w-full py-4 rounded-2xl font-bold text-sm sm:text-base shadow-xl active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 shadow-slate-900/20"
+              >
+                {isSubmitting ? (
+                  'Logging Expense...'
+                ) : (
+                  `Confirm & Log Expense (${currency}${numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})`
+                )}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ===================== ASK FUNDS MODE ===================== */}
@@ -924,34 +967,34 @@ export default function AddTransaction() {
           </>
         )}
 
-        {/* Submit Button */}
-        <button 
-          type="submit" 
-          disabled={isSubmitting || numericAmount <= 0}
-          className={`w-full py-4 rounded-2xl font-bold text-sm shadow-xl active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center justify-center gap-2 ${
-            tab === 'settlement' 
-              ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25' 
-              : tab === 'ask'
-                ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25'
-                : 'bg-slate-900 hover:bg-slate-800 shadow-slate-900/20'
-          }`}
-        >
-          {isSubmitting ? (
-            'Processing...'
-          ) : tab === 'settlement' ? (
-            <>
-              <HandCoins size={16} />
-              <span>Send Settlement for Approval ({currency}{numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})</span>
-            </>
-          ) : tab === 'ask' ? (
-            <>
-              <Send size={16} />
-              <span>Send Fund Request ({currency}{numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})</span>
-            </>
-          ) : (
-            `Confirm & Log Expense (${currency}${numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})`
-          )}
-        </button>
+        {/* Submit Button for Ask & Settlement Modes */}
+        {tab !== 'expense' && (
+          <div className="max-w-xl mx-auto w-full">
+            <button 
+              type="submit" 
+              disabled={isSubmitting || numericAmount <= 0}
+              className={`w-full py-4 rounded-2xl font-bold text-sm sm:text-base shadow-xl active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center justify-center gap-2 ${
+                tab === 'settlement' 
+                  ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25' 
+                  : 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25'
+              }`}
+            >
+              {isSubmitting ? (
+                'Processing...'
+              ) : tab === 'settlement' ? (
+                <>
+                  <HandCoins size={18} />
+                  <span>Send Settlement for Approval ({currency}{numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})</span>
+                </>
+              ) : (
+                <>
+                  <Send size={18} />
+                  <span>Send Fund Request ({currency}{numericAmount > 0 ? numericAmount.toFixed(2) : '0.00'})</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );

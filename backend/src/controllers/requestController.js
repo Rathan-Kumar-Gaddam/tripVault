@@ -40,8 +40,14 @@ export const createRequest = async (req, res) => {
     }
 
     // Verify both requester and targetUser are trip members
-    const isRequesterMember = trip.members.some((m) => m.user.toString() === requesterId.toString());
-    const isTargetMember = trip.members.some((m) => m.user.toString() === targetUser.toString());
+    const isRequesterMember = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId && uId === requesterId.toString();
+    });
+    const isTargetMember = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId && uId === targetUser.toString();
+    });
 
     if (!isRequesterMember || !isTargetMember) {
       return res.status(403).json({ message: 'Both requester and companion must be members of this trip.' });
@@ -82,7 +88,10 @@ export const getTripRequests = async (req, res) => {
     const trip = await Trip.findById(tripId);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
-    const isMember = trip.members.some((m) => m.user.toString() === userId.toString());
+    const isMember = trip.members.some((m) => {
+      const uId = (m.user?._id || m.user)?.toString();
+      return uId && uId === userId.toString();
+    });
     if (!isMember) return res.status(403).json({ message: 'Access denied' });
 
     const requests = await FundRequest.find({ tripId })

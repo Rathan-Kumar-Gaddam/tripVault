@@ -44,9 +44,13 @@ export const computeBilateralDebts = (members = [], transactions = [], currentUs
   const memberList = members || [];
   const memberMap = {};
   memberList.forEach((m) => {
+    if (!m) return;
     const u = m.user || m;
-    const uid = (u._id || u.id || u).toString();
-    memberMap[uid] = u;
+    if (!u) return;
+    const uid = (u._id || u.id || u)?.toString();
+    if (uid) {
+      memberMap[uid] = u;
+    }
   });
 
   // debts[debtorId][payerId] = total amount debtor owes payer
@@ -61,8 +65,14 @@ export const computeBilateralDebts = (members = [], transactions = [], currentUs
   });
 
   (transactions || []).forEach((tx) => {
+    if (!tx) return;
     const payerId = (tx.payer?._id || tx.payer || tx.createdBy?._id || tx.createdBy)?.toString();
     if (!payerId) return;
+
+    // Ensure payer exists in debts matrix
+    if (!debts[payerId]) {
+      debts[payerId] = {};
+    }
 
     // Get splits
     const splits = (tx.splits && tx.splits.length > 0)
@@ -73,6 +83,7 @@ export const computeBilateralDebts = (members = [], transactions = [], currentUs
         }));
 
     splits.forEach((split) => {
+      if (!split) return;
       const debtorId = (split.user?._id || split.user)?.toString();
       const amount = Number(split.amount) || 0;
       if (!debtorId || debtorId === payerId) return;
@@ -92,7 +103,7 @@ export const computeBilateralDebts = (members = [], transactions = [], currentUs
 
     userIds.forEach((otherId) => {
       if (otherId === myId) return;
-      const otherUser = memberMap[otherId];
+      const otherUser = memberMap[otherId] || { name: 'Companion', _id: otherId };
 
       const otherOwesMe = debts[otherId]?.[myId] || 0;
       const iOweOther = debts[myId]?.[otherId] || 0;

@@ -21,17 +21,17 @@ function App() {
 
   return (
     <BrowserRouter>
-      {/* Outer Desktop Canvas with Ambient Glow */}
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-0 sm:p-4 md:p-6 relative overflow-hidden">
-        {/* Background Aurora Orbs */}
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-ambient"></div>
-        <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl pointer-events-none animate-ambient" style={{ animationDelay: '4s' }}></div>
+      {/* Outer Viewport Canvas with Ambient Glow */}
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-0 relative overflow-x-hidden">
+        {/* Background Aurora Orbs on Large Screens */}
+        <div className="hidden sm:block absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-ambient"></div>
+        <div className="hidden sm:block absolute -bottom-40 -right-40 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl pointer-events-none animate-ambient" style={{ animationDelay: '4s' }}></div>
 
-        {/* Mobile App Frame */}
-        <div className="w-full max-w-md h-screen sm:h-[90vh] sm:max-h-[900px] flex flex-col bg-slate-50 text-slate-900 shadow-[0_25px_70px_rgba(0,0,0,0.6)] sm:rounded-[2.5rem] sm:border-[5px] sm:border-slate-800/80 relative overflow-hidden ring-1 ring-white/10">
+        {/* Responsive App Frame: Full bleed on mobile, expansive container on tablet/desktop */}
+        <div className="w-full max-w-5xl xl:max-w-6xl min-h-screen flex flex-col bg-slate-50 text-slate-900 shadow-2xl sm:border-x sm:border-slate-200/80 relative">
           
           {/* Scrollable Content Area */}
-          <main className="flex-1 overflow-y-auto pb-24 no-scrollbar">
+          <main className="flex-1 w-full pb-28 sm:pb-24">
             <Routes>
               <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/" />} />
               <Route path="/join/:id" element={<JoinTrip />} />
