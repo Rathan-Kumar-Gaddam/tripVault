@@ -79,8 +79,8 @@ export const getTransactions = async (req, res) => {
     if (!isMember) return res.status(403).json({ message: 'Access denied' });
 
     const transactions = await Transaction.find({ tripId })
-      .populate('sharedBy', 'name')
-      .populate('createdBy', 'name')
+      .populate('sharedBy', 'name avatar')
+      .populate('createdBy', 'name avatar')
       .sort({ createdAt: -1 }); // Newest first
 
     res.json(transactions);

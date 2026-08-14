@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useTripStore from '../store/useTripStore';
-import { LogOut, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { LogOut, Plus, Trash2, AlertTriangle, User, Settings } from 'lucide-react';
 import toast from 'react-hot-toast'; // 1. Import toast
 
 export default function TripsList() {
@@ -66,12 +66,29 @@ export default function TripsList() {
   return (
     <div className="p-6">
       <header className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">My Trips</h1>
-          <p className="text-gray-500 text-sm">Hello, {user?.name}</p>
+        <div className="flex items-center gap-3.5">
+          <button 
+            onClick={() => navigate('/profile')} 
+            className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-lg overflow-hidden shadow-md shadow-indigo-600/20 active:scale-95 transition-transform border-2 border-white"
+            title="View Profile"
+          >
+            {user?.avatar ? (
+              <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+            ) : (
+              user?.name ? user.name.charAt(0).toUpperCase() : <User size={20} />
+            )}
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">My Trips</h1>
+            <p className="text-gray-500 text-sm">Hello, {user?.name}</p>
+          </div>
         </div>
-        <button onClick={logout} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
-          <LogOut size={20} />
+        <button 
+          onClick={() => navigate('/profile')} 
+          title="Profile & Settings" 
+          className="p-2.5 bg-white border border-gray-200 rounded-2xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition-all active:scale-95"
+        >
+          <Settings size={20} />
         </button>
       </header>
 

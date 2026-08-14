@@ -25,12 +25,28 @@ export const createTrip = async (req, res) => {
 // @route   POST /api/trips/:tripId/members
 export const addMember = async (req, res) => {
   try {
-    const { name, email, tempPassword } = req.body;
+    const { name, phone } = req.body;
     const { tripId } = req.params;
     const requesterId = req.user._id;
 
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Member name is required.' });
+    }
+
+    if (!phone) {
+      return res.status(400).json({ message: 'Phone number is required.' });
+    }
+
+    // Strip all non-digit characters
+    const cleanPhone = phone.toString().replace(/\D/g, '');
+
+    // Validate exactly 10 digits
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    }
+
     const trip = await Trip.findById(tripId);
-    if (!trip) return res.status(404).json({ message: 'Trip not found' });
+    if (!trip) return res.status(404).json({ message: 'Trip not found.' });
 
     // Validate Requester is Admin
     const isAdmin = trip.members.some(
@@ -38,32 +54,30 @@ export const addMember = async (req, res) => {
     );
     if (!isAdmin) return res.status(403).json({ message: 'Only admins can add members.' });
 
-    // Find or Create User
-    let user = await User.findOne({ email });
+    // Find or Create User by phone
+    let user = await User.findOne({ phone: cleanPhone });
     if (!user) {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(tempPassword, salt);
       user = await User.create({
-        name,
-        email,
-        password: hashedPassword,
-        requiresPasswordChange: true,
+        name: name.trim(),
+        phone: cleanPhone,
       });
     }
 
     // Check if user is already in this trip
     const alreadyInTrip = trip.members.some((m) => m.user.toString() === user._id.toString());
-    if (alreadyInTrip) return res.status(400).json({ message: 'User is already in this trip.' });
+    if (alreadyInTrip) {
+      return res.status(400).json({ message: `${name} is already a member of this trip.` });
+    }
 
     // Add to Trip
     trip.members.push({ user: user._id, role: 'member', balance: 0 });
     await trip.save();
 
     // Populate member details before sending response
-    const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email');
+    const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
     res.status(200).json({ message: 'Member added successfully', trip: updatedTrip });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Failed to add member' });
   }
 };
 
@@ -71,7 +85,7 @@ export const addMember = async (req, res) => {
 // @route   GET /api/trips/:tripId
 export const getTripById = async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.tripId).populate('members.user', 'name email');
+    const trip = await Trip.findById(req.params.tripId).populate('members.user', 'name email phone avatar');
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     // Ensure the requester is part of the trip
@@ -88,32 +102,8 @@ export const getTripById = async (req, res) => {
 // @route   GET /api/trips
 export const getUserTrips = async (req, res) => {
   try {
-    const trips = await Trip.find({ 'members.user': req.user._id }).populate('members.user', 'name');
+    const trips = await Trip.find({ 'members.user': req.user._id }).populate('members.user', 'name email phone avatar');
     res.json(trips);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-
-// @desc    Get all transactions for a trip
-// @route   GET /api/transactions/:tripId
-export const getTransactions = async (req, res) => {
-  try {
-    const { tripId } = req.params;
-
-    // Verify user is in the trip
-    const trip = await Trip.findById(tripId);
-    const isMember = trip.members.some((m) => m.user.toString() === req.user._id.toString());
-    if (!isMember) return res.status(403).json({ message: 'Access denied' });
-
-    // Fetches the history, newest first!
-    const transactions = await Transaction.find({ tripId })
-      .populate('sharedBy', 'name')
-      .populate('createdBy', 'name')
-      .sort({ createdAt: -1 }); 
-
-    res.json(transactions);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

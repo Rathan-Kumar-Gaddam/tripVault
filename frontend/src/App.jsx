@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import AddTransaction from './pages/AddTransaction';
 import AddMember from './pages/AddMember';
 import History from './pages/History';
+import Profile from './pages/Profile';
 
 const ProtectedRoute = ({ children }) => {
   const user = useTripStore((state) => state.user);
@@ -28,6 +29,7 @@ function App() {
             <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/" />} />
             
             <Route path="/" element={<ProtectedRoute><TripsList /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/trip/:id" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/trip/:id/add-money" element={<ProtectedRoute><AddTransaction /></ProtectedRoute>} />
             <Route path="/trip/:id/add-member" element={<ProtectedRoute><AddMember /></ProtectedRoute>} />
