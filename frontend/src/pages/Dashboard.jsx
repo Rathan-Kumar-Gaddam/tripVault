@@ -21,9 +21,48 @@ import {
   HelpCircle,
   Bell,
   Check,
-  Ban
+  Ban,
+  PieChart,
+  TrendingUp,
+  Download,
+  Printer,
+  FileSpreadsheet,
+  Target,
+  Edit3,
+  Layers,
+  ChevronRight,
+  UserCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { 
+  exportTripToCSV, 
+  exportPersonalExpenseToCSV,
+  printTripReport, 
+  printPersonalExpenseReport,
+  computeUserShare 
+} from '../utils/exportUtils';
+
+const CATEGORY_COLORS = {
+  'Food & Dining': '#f59e0b',
+  'Transport & Fuel': '#3b82f6',
+  'Stay & Hotels': '#8b5cf6',
+  'Activities & Fun': '#ec4899',
+  'Shopping': '#10b981',
+  'Snacks & Drinks': '#6366f1',
+  'Other': '#64748b',
+};
+
+const CATEGORY_EMOJIS = {
+  'Food & Dining': '🍽️',
+  'Transport & Fuel': '🚕',
+  'Stay & Hotels': '🏨',
+  'Activities & Fun': '🎟️',
+  'Shopping': '🛍️',
+  'Snacks & Drinks': '☕',
+  'Other': '🏷️',
+};
+
+const PRESET_BUDGETS = [10000, 25000, 50000, 100000];
 
 export default function Dashboard() {
   const { id } = useParams();
@@ -35,6 +74,7 @@ export default function Dashboard() {
     fundRequests, 
     fetchTripDetails, 
     logTransaction, 
+    updateTrip,
     createFundRequest, 
     respondToFundRequest, 
     cancelFundRequest, 
@@ -54,12 +94,23 @@ export default function Dashboard() {
   const [askCategory, setAskCategory] = useState('Food & Dining');
   const [isAsking, setIsAsking] = useState(false);
 
+  // Budget Modal State
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [budgetValue, setBudgetValue] = useState('');
+  const [isSavingBudget, setIsSavingBudget] = useState(false);
+
   // Responding state for incoming requests
   const [respondingId, setRespondingId] = useState(null);
 
   useEffect(() => {
     fetchTripDetails(id);
   }, [id]);
+
+  useEffect(() => {
+    if (currentTrip?.budget) {
+      setBudgetValue(currentTrip.budget.toString());
+    }
+  }, [currentTrip?.budget]);
 
   if (isLoading || !currentTrip) return (
     <div className="p-10 flex flex-col items-center justify-center h-full text-slate-400 gap-3 min-h-[50vh]">
@@ -95,7 +146,39 @@ export default function Dashboard() {
     ?.filter(t => t.type === 'expense')
     ?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
 
+  const myTotalShare = transactions
+    ?.filter(t => t.type === 'expense')
+    ?.reduce((sum, t) => sum + computeUserShare(t, user?._id, members), 0) || 0;
+
   const totalTransactionsCount = transactions?.length || 0;
+
+  // Budget calculations
+  const budget = currentTrip.budget || 0;
+  const budgetRemaining = budget > 0 ? (budget - totalTripSpend) : null;
+  const rawBudgetPercent = budget > 0 ? (totalTripSpend / budget) * 100 : 0;
+  const budgetPercentage = Math.min(100, Math.round(rawBudgetPercent));
+  const isOverBudget = budget > 0 && totalTripSpend > budget;
+
+  // Category breakdown calculations
+  const categoryStats = {};
+  transactions
+    .filter((t) => t.type === 'expense')
+    .forEach((t) => {
+      const cat = t.category || 'Other';
+      if (!categoryStats[cat]) {
+        categoryStats[cat] = {
+          name: cat,
+          total: 0,
+          count: 0,
+          color: CATEGORY_COLORS[cat] || '#6366f1',
+          emoji: CATEGORY_EMOJIS[cat] || '🏷️',
+        };
+      }
+      categoryStats[cat].total += t.amount || 0;
+      categoryStats[cat].count += 1;
+    });
+
+  const sortedCategories = Object.values(categoryStats).sort((a, b) => b.total - a.total);
 
   // Open Quick Settle Modal
   const handleOpenSettleModal = (companion) => {
@@ -214,6 +297,60 @@ export default function Dashboard() {
     }
   };
 
+  // Handle Save Budget
+  const handleSaveBudget = async (e) => {
+    e.preventDefault();
+    if (isSavingBudget) return;
+
+    const num = Math.max(0, Number(budgetValue) || 0);
+
+    try {
+      setIsSavingBudget(true);
+      await updateTrip(id, { budget: num });
+      toast.success(num > 0 ? `Trip budget set to ${currency}${num.toLocaleString()} 🎯` : 'Budget limit cleared.');
+      setShowBudgetModal(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save budget.');
+    } finally {
+      setIsSavingBudget(false);
+    }
+  };
+
+  // Handle Export Actions
+  const handleExportCSV = () => {
+    try {
+      exportTripToCSV(currentTrip, transactions, companionDebts, user);
+      toast.success('Group Excel/CSV Report downloaded! 📊');
+    } catch (err) {
+      toast.error('Failed to export CSV.');
+    }
+  };
+
+  const handleExportPersonalCSV = () => {
+    try {
+      exportPersonalExpenseToCSV(currentTrip, transactions, user);
+      toast.success('My Personal Expenses CSV downloaded! 👤');
+    } catch (err) {
+      toast.error('Failed to export personal CSV.');
+    }
+  };
+
+  const handlePrintPDF = () => {
+    try {
+      printTripReport(currentTrip, transactions, companionDebts, user);
+    } catch (err) {
+      toast.error('Failed to generate PDF statement.');
+    }
+  };
+
+  const handlePrintPersonalPDF = () => {
+    try {
+      printPersonalExpenseReport(currentTrip, transactions, user);
+    } catch (err) {
+      toast.error('Failed to generate personal PDF statement.');
+    }
+  };
+
   return (
     <div className="p-6 pb-28">
       {/* Top Header */}
@@ -229,9 +366,11 @@ export default function Dashboard() {
               </span>
             )}
           </div>
-          <p className="text-slate-500 text-xs font-semibold">
-            Trip Spend: <strong className="text-rose-600 font-bold">-{currency}{totalTripSpend.toFixed(2)}</strong>
-            <span className="mx-1.5 text-slate-300">•</span>
+          <p className="text-slate-500 text-xs font-semibold flex items-center flex-wrap gap-x-2 gap-y-0.5">
+            <span>Trip Spend: <strong className="text-rose-600 font-bold">-{currency}{totalTripSpend.toFixed(2)}</strong></span>
+            <span className="text-slate-300">•</span>
+            <span>My Share: <strong className="text-indigo-600 font-bold">-{currency}{myTotalShare.toFixed(2)}</strong></span>
+            <span className="text-slate-300">•</span>
             <span>{totalTransactionsCount} {totalTransactionsCount === 1 ? 'activity' : 'activities'}</span>
           </p>
         </div>
@@ -336,7 +475,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Hero Passbook Card (Personal Net Position) */}
+      {/* ===================== HERO PASSBOOK CARD (Personal Net Position) ===================== */}
       <div className={`relative overflow-hidden p-6 rounded-[2.5rem] shadow-2xl text-white mb-6 transition-all ${
         netPosition > 0.01 
           ? 'bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-800 shadow-emerald-600/25' 
@@ -405,6 +544,84 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ===================== FEATURE 4: TRIP BUDGET TRACKER CARD ===================== */}
+      <div className="bg-white border border-slate-200/80 rounded-[2rem] p-5 mb-6 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+              <Target size={16} />
+            </div>
+            <div>
+              <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider">Trip Budget</h3>
+              <p className="text-[10px] text-slate-400 font-semibold">Spending limit & target</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowBudgetModal(true)}
+            className="px-2.5 py-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-1 active:scale-95 transition-all"
+          >
+            <Edit3 size={11} />
+            <span>{budget > 0 ? 'Edit' : '+ Set Target'}</span>
+          </button>
+        </div>
+
+        {budget > 0 ? (
+          <div>
+            <div className="flex justify-between items-baseline mb-2">
+              <div>
+                <span className="text-lg font-black text-slate-900 font-heading">
+                  {currency}{totalTripSpend.toFixed(2)}
+                </span>
+                <span className="text-xs text-slate-400 font-semibold ml-1.5">
+                  / {currency}{budget.toLocaleString()}
+                </span>
+              </div>
+              <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${
+                isOverBudget 
+                  ? 'bg-rose-100 text-rose-700' 
+                  : budgetPercentage >= 75 
+                    ? 'bg-amber-100 text-amber-800' 
+                    : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {isOverBudget ? `⚠️ Over by ${currency}${Math.abs(budgetRemaining).toFixed(0)}` : `${budgetPercentage}% used`}
+              </span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/50">
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ${
+                  isOverBudget 
+                    ? 'bg-gradient-to-r from-rose-500 to-red-600' 
+                    : budgetPercentage >= 75 
+                      ? 'bg-gradient-to-r from-amber-400 to-orange-500' 
+                      : 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(2, budgetPercentage))}%` }}
+              ></div>
+            </div>
+
+            <div className="flex justify-between items-center mt-2 text-[11px] font-semibold text-slate-400">
+              <span>{currency}{(totalTripSpend).toFixed(0)} spent</span>
+              <span>{isOverBudget ? '0.00' : `${currency}${budgetRemaining?.toFixed(0)}`} remaining</span>
+            </div>
+          </div>
+        ) : (
+          <div 
+            onClick={() => setShowBudgetModal(true)}
+            className="border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-2xl p-4 text-center cursor-pointer transition-colors group"
+          >
+            <p className="text-xs font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">
+              🎯 No budget set for this trip
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Set a budget target to monitor group spending in real-time
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Quick Action Pills Grid (Available to ALL members) */}
       <div className="grid grid-cols-4 gap-2 mb-7">
         <button
@@ -447,6 +664,66 @@ export default function Dashboard() {
           <span className="text-[10px] font-bold text-slate-800">Timeline</span>
         </button>
       </div>
+
+      {/* ===================== FEATURE 4: CATEGORY SPEND BREAKDOWN ===================== */}
+      {sortedCategories.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3.5">
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
+                <PieChart size={16} className="text-indigo-600" />
+                <span>Spend by Category</span>
+              </h3>
+              <p className="text-[11px] font-medium text-slate-400">Where the trip money went</p>
+            </div>
+            <span className="text-xs font-bold text-slate-400">
+              {sortedCategories.length} categories
+            </span>
+          </div>
+
+          {/* Segmented Visual Proportion Bar */}
+          <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-slate-200/60 mb-3 shadow-inner">
+            {sortedCategories.map((cat) => {
+              const pct = totalTripSpend > 0 ? (cat.total / totalTripSpend) * 100 : 0;
+              if (pct < 1) return null;
+              return (
+                <div
+                  key={cat.name}
+                  className="h-full rounded-sm transition-all first:rounded-l-full last:rounded-r-full"
+                  style={{ width: `${pct}%`, backgroundColor: cat.color }}
+                  title={`${cat.name}: ${currency}${cat.total.toFixed(2)} (${pct.toFixed(1)}%)`}
+                ></div>
+              );
+            })}
+          </div>
+
+          {/* Category Ranked Items */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {sortedCategories.map((cat) => {
+              const pct = totalTripSpend > 0 ? ((cat.total / totalTripSpend) * 100).toFixed(1) : '0';
+              return (
+                <div
+                  key={cat.name}
+                  className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-lg">{cat.emoji}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {pct}%
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-700 truncate">{cat.name}</p>
+                    <p className="text-xs font-black text-slate-900 mt-0.5 font-heading">
+                      {currency}{cat.total.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ===================== PEER-TO-PEER DEBT BREAKDOWN ===================== */}
       <section className="mb-8">
@@ -528,7 +805,6 @@ export default function Dashboard() {
 
                   {/* Actions / Settle Up & Ask Button */}
                   <div className="shrink-0 flex items-center gap-1.5">
-                    {/* Ask ₹ button for every companion */}
                     <button
                       onClick={() => { setAskTargetUser((compUser?._id || compUser)?.toString()); setShowAskModal(true); }}
                       className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold active:scale-95 transition-all flex items-center gap-1"
@@ -562,6 +838,59 @@ export default function Dashboard() {
             })}
           </div>
         )}
+      </section>
+
+      {/* ===================== FEATURE 5: EXPORT PASSBOOK & REPORT ===================== */}
+      <section className="mb-8">
+        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-[2rem] shadow-xl border border-slate-800">
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="p-2 bg-white/10 rounded-xl">
+              <Download size={18} className="text-indigo-300" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Export Reports</h3>
+              <p className="text-[11px] text-slate-300">Download for Excel/Sheets or generate clean PDF statements</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <button
+              onClick={handleExportCSV}
+              className="py-2.5 px-3 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold text-xs rounded-xl transition-all border border-white/15 flex items-center justify-center gap-1.5 shadow-sm"
+              title="Download group passbook CSV"
+            >
+              <FileSpreadsheet size={15} className="text-emerald-400" />
+              <span>Group CSV</span>
+            </button>
+
+            <button
+              onClick={handlePrintPDF}
+              className="py-2.5 px-3 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold text-xs rounded-xl transition-all border border-white/15 flex items-center justify-center gap-1.5 shadow-sm"
+              title="Print group statement PDF"
+            >
+              <Printer size={15} className="text-indigo-300" />
+              <span>Group PDF</span>
+            </button>
+
+            <button
+              onClick={handleExportPersonalCSV}
+              className="py-2.5 px-3 bg-indigo-600/70 hover:bg-indigo-600 active:scale-95 text-white font-bold text-xs rounded-xl transition-all border border-indigo-400/30 flex items-center justify-center gap-1.5 shadow-sm"
+              title="Download personal expenses for tracking & reimbursements"
+            >
+              <UserCheck size={15} className="text-emerald-300" />
+              <span>My Expenses CSV</span>
+            </button>
+
+            <button
+              onClick={handlePrintPersonalPDF}
+              className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5"
+              title="Print personal statement PDF"
+            >
+              <Printer size={15} className="text-purple-200" />
+              <span>My Statement PDF</span>
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* ===================== GROUP LEDGER ===================== */}
@@ -788,6 +1117,91 @@ export default function Dashboard() {
                 >
                   <Send size={14} />
                   <span>{isAsking ? 'Sending...' : 'Send Request'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== SET/EDIT TRIP BUDGET MODAL ===================== */}
+      {showBudgetModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center mb-4">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <Target size={24} />
+              </div>
+              <button 
+                onClick={() => setShowBudgetModal(false)}
+                disabled={isSavingBudget}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900 mb-1 font-heading">
+              Trip Budget Target
+            </h3>
+            
+            <p className="text-xs text-slate-500 mb-4">
+              Set a spending limit for this trip. All group expenses will be tracked against this limit.
+            </p>
+
+            <form onSubmit={handleSaveBudget} className="flex flex-col gap-4">
+              {/* Quick Presets */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {PRESET_BUDGETS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setBudgetValue(p.toString())}
+                    className="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 active:scale-95 transition-all"
+                  >
+                    {currency}{(p / 1000)}k
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setBudgetValue('0')}
+                  className="px-2.5 py-1 bg-slate-50 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 active:scale-95 transition-all"
+                >
+                  Clear
+                </button>
+              </div>
+
+              {/* Amount Input */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex items-center justify-center">
+                <span className="text-2xl font-bold text-slate-400 mr-2 font-heading">{currency}</span>
+                <input
+                  type="number"
+                  step="100"
+                  min="0"
+                  value={budgetValue}
+                  onChange={(e) => setBudgetValue(e.target.value)}
+                  placeholder="0"
+                  required
+                  disabled={isSavingBudget}
+                  className="text-3xl font-black text-slate-900 text-center outline-none w-44 bg-transparent tracking-tight font-heading"
+                />
+              </div>
+
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBudgetModal(false)}
+                  disabled={isSavingBudget}
+                  className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingBudget}
+                  className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl text-xs shadow-lg shadow-indigo-600/25 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <span>{isSavingBudget ? 'Saving...' : 'Save Budget'}</span>
                 </button>
               </div>
             </form>

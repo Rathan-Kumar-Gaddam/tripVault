@@ -13,19 +13,34 @@ import {
   Sparkles,
   HandCoins,
   Trash2,
-  Tag
+  Tag,
+  Download,
+  Printer,
+  FileSpreadsheet,
+  MoreVertical,
+  UserCheck,
+  CreditCard
 } from 'lucide-react';
-import useTripStore from '../store/useTripStore';
+import useTripStore, { computeBilateralDebts } from '../store/useTripStore';
 import toast from 'react-hot-toast';
+import { 
+  exportTripToCSV, 
+  exportPersonalExpenseToCSV,
+  printTripReport, 
+  printPersonalExpenseReport,
+  computeUserShare 
+} from '../utils/exportUtils';
 
 export default function History() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, currentTrip, transactions, fetchTripDetails, deleteTransaction, isLoading } = useTripStore();
   
-  const [filterType, setFilterType] = useState('all'); // 'all' | 'expense' | 'settlement' | 'mine'
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'my_share' | 'paid_by_me' | 'settlement'
   const [searchQuery, setSearchQuery] = useState('');
   const [deletingId, setDeletingId] = useState(null);
+  const [txToDelete, setTxToDelete] = useState(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
     if (!currentTrip || currentTrip._id !== id) {
@@ -46,24 +61,64 @@ export default function History() {
   const myMembership = currentTrip.members?.find(m => (m.user?._id || m.user) === user?._id);
   const isAdmin = myMembership?.role === 'admin';
 
+  const { companionDebts } = computeBilateralDebts(currentTrip.members, transactions, user?._id);
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', { 
       month: 'short', day: 'numeric', year: 'numeric' 
     });
   };
 
-  const handleDelete = async (txId, e) => {
-    e.stopPropagation();
-    if (deletingId) return;
-
-    if (!window.confirm('Delete this transaction and recalculate balances?')) {
-      return;
+  // Group CSV Export
+  const handleExportGroupCSV = () => {
+    try {
+      exportTripToCSV(currentTrip, transactions, companionDebts, user);
+      toast.success('Group Passbook CSV downloaded! 📊');
+      setShowExportMenu(false);
+    } catch (err) {
+      toast.error('Failed to export CSV.');
     }
+  };
+
+  // Personal CSV Export
+  const handleExportPersonalCSV = () => {
+    try {
+      exportPersonalExpenseToCSV(currentTrip, transactions, user);
+      toast.success('Personal Expenses CSV downloaded! 👤');
+      setShowExportMenu(false);
+    } catch (err) {
+      toast.error('Failed to export personal CSV.');
+    }
+  };
+
+  // Group PDF
+  const handlePrintGroupPDF = () => {
+    try {
+      printTripReport(currentTrip, transactions, companionDebts, user);
+      setShowExportMenu(false);
+    } catch (err) {
+      toast.error('Failed to print group statement.');
+    }
+  };
+
+  // Personal PDF
+  const handlePrintPersonalPDF = () => {
+    try {
+      printPersonalExpenseReport(currentTrip, transactions, user);
+      setShowExportMenu(false);
+    } catch (err) {
+      toast.error('Failed to print personal statement.');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!txToDelete || deletingId) return;
 
     try {
-      setDeletingId(txId);
-      await deleteTransaction(txId, id);
-      toast.success('Transaction removed & balances updated.');
+      setDeletingId(txToDelete._id);
+      await deleteTransaction(txToDelete._id, id);
+      toast.success('Transaction removed & balances updated 🗑️');
+      setTxToDelete(null);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to delete transaction.');
     } finally {
@@ -74,12 +129,13 @@ export default function History() {
   // Filter & Search logic
   const filteredTransactions = transactions.filter((tx) => {
     const payerId = (tx.payer?._id || tx.payer || tx.createdBy?._id || tx.createdBy)?.toString();
-    const isMine = payerId === user?._id?.toString();
+    const isPaidByMe = payerId === user?._id?.toString();
+    const myShare = computeUserShare(tx, user?._id, currentTrip.members);
 
     let matchesType = true;
-    if (filterType === 'expense') matchesType = tx.type === 'expense';
+    if (filterType === 'my_share') matchesType = tx.type === 'expense' && myShare > 0;
+    else if (filterType === 'paid_by_me') matchesType = isPaidByMe;
     else if (filterType === 'settlement') matchesType = tx.type === 'settlement';
-    else if (filterType === 'mine') matchesType = isMine;
 
     const matchesSearch = !searchQuery.trim() || 
       tx.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -89,13 +145,21 @@ export default function History() {
     return matchesType && matchesSearch;
   });
 
+  // Calculate totals
   const totalSpent = transactions
     .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const totalSettlements = transactions
-    .filter(t => t.type === 'settlement')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const totalMyConsumption = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + computeUserShare(t, user?._id, currentTrip.members), 0);
+
+  const totalMyPaidUpfront = transactions
+    .filter(t => {
+      const payerId = (t.payer?._id || t.payer || t.createdBy?._id || t.createdBy)?.toString();
+      return payerId === user?._id?.toString() && t.type === 'expense';
+    })
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   return (
     <div className="p-6 pb-28">
@@ -111,21 +175,77 @@ export default function History() {
           <h1 className="text-xl font-bold text-slate-900 font-heading">Trip Activity Log</h1>
           <p className="text-xs text-slate-500 font-medium">{currentTrip.name}</p>
         </div>
-        <div className="w-10"></div>
+
+        {/* Export Dropdown Menu */}
+        <div className="relative">
+          <button 
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            className="p-2.5 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-indigo-600 shadow-sm active:scale-95 transition-all"
+            title="Export Reports"
+          >
+            <Download size={20} />
+          </button>
+
+          {showExportMenu && (
+            <div className="absolute right-0 top-12 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                Full Group Reports
+              </div>
+              <button
+                onClick={handleExportGroupCSV}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2"
+              >
+                <FileSpreadsheet size={15} className="text-emerald-600 shrink-0" />
+                <span>Group Passbook (Excel/CSV)</span>
+              </button>
+              <button
+                onClick={handlePrintGroupPDF}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2"
+              >
+                <Printer size={15} className="text-indigo-600 shrink-0" />
+                <span>Group Statement (PDF)</span>
+              </button>
+
+              <div className="my-1.5 border-t border-slate-100"></div>
+
+              <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                Individual / Personal Tracking
+              </div>
+              <button
+                onClick={handleExportPersonalCSV}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-indigo-50 text-xs font-bold text-indigo-900 flex items-center gap-2"
+              >
+                <UserCheck size={15} className="text-indigo-600 shrink-0" />
+                <span>My Personal Expenses (CSV)</span>
+              </button>
+              <button
+                onClick={handlePrintPersonalPDF}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-indigo-50 text-xs font-bold text-indigo-900 flex items-center gap-2"
+              >
+                <Printer size={15} className="text-purple-600 shrink-0" />
+                <span>My Personal Statement (PDF)</span>
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Summary Stat Pills */}
       <div className="grid grid-cols-2 gap-3 mb-6">
         <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Total Expenses</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+            {filterType === 'my_share' ? 'My Consumed Share' : 'Total Expenses'}
+          </p>
           <p className="text-lg font-black text-rose-600 font-heading">
-            -{currency}{totalSpent.toFixed(2)}
+            -{currency}{(filterType === 'my_share' ? totalMyConsumption : totalSpent).toFixed(2)}
           </p>
         </div>
         <div className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Settlements Paid</p>
-          <p className="text-lg font-black text-emerald-600 font-heading">
-            {currency}{totalSettlements.toFixed(2)}
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+            {filterType === 'paid_by_me' ? 'Paid by You' : 'My True Share'}
+          </p>
+          <p className="text-lg font-black text-indigo-600 font-heading">
+            {currency}{(filterType === 'paid_by_me' ? totalMyPaidUpfront : totalMyConsumption).toFixed(2)}
           </p>
         </div>
       </div>
@@ -144,38 +264,38 @@ export default function History() {
         </div>
 
         {/* Filter Pills */}
-        <div className="flex gap-1.5 p-1 bg-slate-200/60 rounded-2xl">
+        <div className="flex gap-1.5 p-1 bg-slate-200/60 rounded-2xl overflow-x-auto no-scrollbar">
           <button
             onClick={() => setFilterType('all')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               filterType === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             All ({transactions.length})
           </button>
           <button
-            onClick={() => setFilterType('expense')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterType === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            onClick={() => setFilterType('my_share')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              filterType === 'my_share' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            Expenses
+            👤 My Share
+          </button>
+          <button
+            onClick={() => setFilterType('paid_by_me')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              filterType === 'paid_by_me' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            💳 Paid by Me
           </button>
           <button
             onClick={() => setFilterType('settlement')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterType === 'settlement' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            className={`py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              filterType === 'settlement' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             Settled
-          </button>
-          <button
-            onClick={() => setFilterType('mine')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterType === 'mine' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Paid by Me
           </button>
         </div>
       </div>
@@ -197,6 +317,7 @@ export default function History() {
             const payer = tx.payer || tx.createdBy;
             const isPaidByMe = (payer?._id || payer) === user?._id;
             const canDelete = isPaidByMe || isAdmin;
+            const myIndividualShare = computeUserShare(tx, user?._id, currentTrip.members);
 
             // Recipient for settlement
             const recipient = tx.splits?.[0]?.user || tx.sharedBy?.[0];
@@ -236,36 +357,152 @@ export default function History() {
                         {tx.category}
                       </span>
                     )}
+                    {isExpense && myIndividualShare > 0 && (
+                      <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+                        Your share: {currency}{myIndividualShare.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   
                   {/* Payer & Split Info */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 p-2.5 rounded-2xl w-full">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span className="font-bold text-slate-900">
-                        {isPaidByMe ? 'You paid' : `${payer?.name || 'Companion'} paid`}
-                      </span>
-                      {isSettlement && recipient && (
-                        <span className="text-slate-500 truncate">
-                          → {recipient._id === user?._id ? 'You' : recipient.name}
+                  <div className="flex flex-col gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 p-2.5 rounded-2xl w-full">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="font-bold text-slate-900">
+                          {isPaidByMe ? 'You paid total' : `${payer?.name || 'Companion'} paid total`}
                         </span>
+                        {isSettlement && recipient && (
+                          <span className="text-slate-500 truncate">
+                            → {recipient._id === user?._id ? 'You' : recipient.name}
+                          </span>
+                        )}
+                      </div>
+
+                      {canDelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTxToDelete(tx);
+                          }}
+                          disabled={deletingId === tx._id}
+                          className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
+                          title="Delete transaction"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       )}
                     </div>
 
-                    {canDelete && (
-                      <button
-                        onClick={(e) => handleDelete(tx._id, e)}
-                        disabled={deletingId === tx._id}
-                        className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
-                        title="Delete transaction"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
+                    {/* Split Type Badge & Per-Person Breakdown */}
+                    {isExpense && (() => {
+                      const effectiveSplits = (tx.splits && tx.splits.length > 0)
+                        ? tx.splits
+                        : (tx.sharedBy && tx.sharedBy.length > 0)
+                          ? tx.sharedBy.map(u => ({ user: u, amount: tx.amount / tx.sharedBy.length }))
+                          : (currentTrip.members || []).map(m => ({ user: m.user, amount: tx.amount / (currentTrip.members?.length || 1) }));
+
+                      const splitCount = effectiveSplits.length;
+                      const isCommon = tx.splitType === 'all' || !tx.splitType;
+                      const isCustom = tx.splitType === 'custom';
+                      const isIndividual = tx.splitType === 'individual';
+                      const perPersonEqual = tx.amount / Math.max(1, splitCount);
+
+                      return (
+                        <div className="mt-1 pt-2 border-t border-slate-200/60">
+                          <div className="flex items-center justify-between mb-1.5 text-[10px]">
+                            <span className="font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                              {isCommon && `👥 Split equally (${currency}${perPersonEqual.toFixed(2)} / each)`}
+                              {isCustom && `✨ Custom split (${splitCount} members)`}
+                              {isIndividual && `👤 1-on-1 split`}
+                            </span>
+                            <span className="font-semibold text-slate-400">
+                              {splitCount} {splitCount === 1 ? 'person' : 'people'}
+                            </span>
+                          </div>
+
+                          {/* Member Share Chips */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {effectiveSplits.map((s, idx) => {
+                              const sUser = s.user || s;
+                              const sUserId = (sUser?._id || sUser)?.toString();
+                              const isSelfShare = sUserId === user?._id?.toString();
+                              const sName = isSelfShare ? 'You' : (sUser?.name || 'Member');
+                              const sAmount = s.amount !== undefined ? s.amount : perPersonEqual;
+
+                              return (
+                                <div 
+                                  key={sUserId || idx}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all ${
+                                    isSelfShare 
+                                      ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm' 
+                                      : 'bg-white border-slate-200/80 text-slate-700'
+                                  }`}
+                                >
+                                  <span className="truncate max-w-[85px]">{sName}:</span>
+                                  <span className="font-extrabold font-heading text-rose-600">
+                                    {currency}{Number(sAmount).toFixed(2)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ===================== DELETE TRANSACTION CONFIRMATION MODAL ===================== */}
+      {txToDelete && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-rose-100">
+              <Trash2 size={26} />
+            </div>
+            
+            <h3 className="text-lg font-bold text-center text-slate-900 mb-1 font-heading">
+              Delete Transaction?
+            </h3>
+            
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 my-4 text-center">
+              <p className="font-extrabold text-slate-900 text-sm truncate">{txToDelete.description}</p>
+              <p className="text-base font-black text-rose-600 mt-0.5 font-heading">
+                {currency}{txToDelete.amount.toFixed(2)}
+              </p>
+              <p className="text-[11px] text-slate-400 font-semibold mt-1">
+                Paid by {txToDelete.payer?.name || txToDelete.createdBy?.name || 'Member'}
+              </p>
+            </div>
+
+            <p className="text-xs text-center text-slate-500 mb-6">
+              This will permanently remove this transaction and automatically recalculate all member balances.
+            </p>
+
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                onClick={() => setTxToDelete(null)}
+                disabled={Boolean(deletingId)}
+                className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={Boolean(deletingId)}
+                className="flex-1 py-3.5 bg-rose-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-rose-600/25 hover:bg-rose-700 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <Trash2 size={14} />
+                <span>{deletingId ? 'Deleting...' : 'Delete'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

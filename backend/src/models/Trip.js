@@ -11,6 +11,7 @@ const tripSchema = new mongoose.Schema(
     name: { type: String, required: true },
     destination: { type: String },
     currency: { type: String, default: '₹' },
+    budget: { type: Number, default: 0 },
     members: [tripMemberSchema],
     totalVault: { type: Number, default: 0 }, // Total contributions injected into the trip
   },

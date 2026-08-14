@@ -1,5 +1,13 @@
 import express from 'express';
-import { createTrip, addMember, removeMember, getTripById, getUserTrips, deleteTrip } from '../controllers/tripController.js';
+import { 
+  createTrip, 
+  addMember, 
+  removeMember, 
+  getTripById, 
+  getUserTrips, 
+  updateTrip,
+  deleteTrip 
+} from '../controllers/tripController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -10,6 +18,7 @@ router.route('/')
 
 router.route('/:tripId')
   .get(protect, getTripById)
+  .put(protect, updateTrip)
   .delete(protect, deleteTrip);
 
 router.route('/:tripId/members')

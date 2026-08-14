@@ -215,6 +215,16 @@ const useTripStore = create((set, get) => ({
   createTrip: async (tripData) => {
     const { data } = await api.post('/trips', tripData);
     set((state) => ({ trips: [...state.trips, data] }));
+    return data;
+  },
+
+  updateTrip: async (tripId, tripData) => {
+    const { data } = await api.put(`/trips/${tripId}`, tripData);
+    set((state) => ({
+      currentTrip: state.currentTrip?._id === tripId ? data : state.currentTrip,
+      trips: state.trips.map((t) => (t._id === tripId ? data : t)),
+    }));
+    return data;
   },
   
   deleteTrip: async (tripId) => {

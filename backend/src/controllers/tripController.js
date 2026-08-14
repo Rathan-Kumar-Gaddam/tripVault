@@ -109,6 +109,35 @@ export const getUserTrips = async (req, res) => {
   }
 };
 
+// @desc    Update trip details (name, currency, budget, destination)
+// @route   PUT /api/trips/:tripId
+export const updateTrip = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { name, destination, currency, budget } = req.body;
+    const requesterId = req.user._id;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) return res.status(404).json({ message: 'Trip not found' });
+
+    // Validate requester is member (or admin)
+    const isMember = trip.members.some((m) => m.user.toString() === requesterId.toString());
+    if (!isMember) return res.status(403).json({ message: 'Access denied' });
+
+    if (name !== undefined && name.trim()) trip.name = name.trim();
+    if (destination !== undefined) trip.destination = destination;
+    if (currency !== undefined && currency.trim()) trip.currency = currency.trim();
+    if (budget !== undefined) trip.budget = Math.max(0, Number(budget) || 0);
+
+    await trip.save();
+
+    const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+    res.json(updatedTrip);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 // @desc    Admin deletes a trip and all its transactions
 // @route   DELETE /api/trips/:tripId
