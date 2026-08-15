@@ -510,49 +510,61 @@ export default function History() {
                           : (currentTrip.members || []).map(m => ({ user: m.user, amount: tx.amount / (currentTrip.members?.length || 1) }));
 
                       const splitCount = effectiveSplits.length;
-                      const isCommon = tx.splitType === 'all' || !tx.splitType;
-                      const isCustom = tx.splitType === 'custom';
-                      const isIndividual = tx.splitType === 'individual';
+                      const payerUid = (payer?._id || payer)?.toString();
+                      const isSelfExpense = tx.splitType === 'self' || (splitCount === 1 && (effectiveSplits[0]?.user?._id || effectiveSplits[0]?.user)?.toString() === payerUid);
+                      const isCommon = !isSelfExpense && (tx.splitType === 'all' || !tx.splitType);
+                      const isCustom = !isSelfExpense && tx.splitType === 'custom';
+                      const isIndividual = !isSelfExpense && tx.splitType === 'individual';
                       const perPersonEqual = tx.amount / Math.max(1, splitCount);
 
                       return (
                         <div className="mt-1 pt-2 border-t border-slate-200/60">
                           <div className="flex items-center justify-between mb-1.5 text-[10px]">
                             <span className="font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                              {isSelfExpense && <span className="text-purple-700 font-extrabold">👤 Personal Expense (No Split)</span>}
                               {isCommon && `👥 Split equally (${currency}${perPersonEqual.toFixed(2)} / each)`}
                               {isCustom && `✨ Custom split (${splitCount} members)`}
-                              {isIndividual && `👤 1-on-1 split`}
+                              {isIndividual && `🎯 1-on-1 split`}
                             </span>
                             <span className="font-semibold text-slate-400">
-                              {splitCount} {splitCount === 1 ? 'person' : 'people'}
+                              {isSelfExpense ? 'No debts created' : `${splitCount} ${splitCount === 1 ? 'person' : 'people'}`}
                             </span>
                           </div>
 
                           {/* Member Share Chips */}
                           <div className="flex flex-wrap gap-1.5">
-                            {effectiveSplits.map((s, idx) => {
-                              const sUser = s.user || s;
-                              const sUserId = (sUser?._id || sUser)?.toString();
-                              const isSelfShare = sUserId === user?._id?.toString();
-                              const sName = isSelfShare ? 'You' : (sUser?.name || 'Member');
-                              const sAmount = s.amount !== undefined ? s.amount : perPersonEqual;
+                            {isSelfExpense ? (
+                              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-purple-50 border border-purple-200 text-purple-900 shadow-sm">
+                                <span>{isPaidByMe ? 'You (100%)' : `${payer?.name || 'Payer'} (100%)`}:</span>
+                                <span className="font-extrabold font-heading text-purple-700">
+                                  {currency}{Number(tx.amount).toFixed(2)}
+                                </span>
+                              </div>
+                            ) : (
+                              effectiveSplits.map((s, idx) => {
+                                const sUser = s.user || s;
+                                const sUserId = (sUser?._id || sUser)?.toString();
+                                const isSelfShare = sUserId === user?._id?.toString();
+                                const sName = isSelfShare ? 'You' : (sUser?.name || 'Member');
+                                const sAmount = s.amount !== undefined ? s.amount : perPersonEqual;
 
-                              return (
-                                <div 
-                                  key={sUserId || idx}
-                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all ${
-                                    isSelfShare 
-                                      ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm' 
-                                      : 'bg-white border-slate-200/80 text-slate-700'
-                                  }`}
-                                >
-                                  <span className="truncate max-w-[85px]">{sName}:</span>
-                                  <span className="font-extrabold font-heading text-rose-600">
-                                    {currency}{Number(sAmount).toFixed(2)}
-                                  </span>
-                                </div>
-                              );
-                            })}
+                                return (
+                                  <div 
+                                    key={sUserId || idx}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all ${
+                                      isSelfShare 
+                                        ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm' 
+                                        : 'bg-white border-slate-200/80 text-slate-700'
+                                    }`}
+                                  >
+                                    <span className="truncate max-w-[85px]">{sName}:</span>
+                                    <span className="font-extrabold font-heading text-rose-600">
+                                      {currency}{Number(sAmount).toFixed(2)}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                            )}
                           </div>
                         </div>
                       );

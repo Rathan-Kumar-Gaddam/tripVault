@@ -142,6 +142,10 @@ export const logTransaction = async (req, res) => {
         amount: splitAmount,
       }));
       finalSharedBy = trip.members.map((m) => m.user);
+    } else if (splitType === 'self') {
+      // Personal Expense: Paid by payer exclusively for themselves (0 debt created)
+      finalSplits = [{ user: effectivePayer, amount: numAmount }];
+      finalSharedBy = [effectivePayer];
     } else if (splitType === 'individual') {
       // Specific single companion
       const targetUser = (sharedBy && sharedBy.length > 0) ? sharedBy[0] : (splits && splits.length > 0 ? splits[0].user : null);

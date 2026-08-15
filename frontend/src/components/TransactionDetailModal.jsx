@@ -35,8 +35,15 @@ export default function TransactionDetailModal({
   const meta = getCategoryMeta(transaction.category || (isSettlement ? 'Settlement' : 'Other'));
   const emoji = meta.emoji;
   const payerName = transaction.payer?.name || 'Unknown';
-  const isPayerMe = (transaction.payer?._id || transaction.payer) === currentUser?._id;
-  const canDelete = isAdmin || (transaction.createdBy?._id || transaction.createdBy) === currentUser?._id;
+  const payerId = (transaction.payer?._id || transaction.payer)?.toString();
+  const isPayerMe = payerId === currentUser?._id?.toString();
+  const canDelete = isAdmin || (transaction.createdBy?._id || transaction.createdBy)?.toString() === currentUser?._id?.toString();
+
+  const splits = transaction.splits || [];
+  const isPersonal = !isSettlement && (
+    transaction.splitType === 'self' || 
+    (splits.length === 1 && (splits[0]?.user?._id || splits[0]?.user)?.toString() === payerId)
+  );
 
   const dateObj = new Date(transaction.createdAt || Date.now());
   const formattedDate = dateObj.toLocaleDateString('en-US', {
@@ -72,9 +79,13 @@ export default function TransactionDetailModal({
           <div className="flex items-center gap-2">
             <span className="text-2xl">{emoji}</span>
             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
-              isSettlement ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : (meta.theme?.badge || 'bg-indigo-100 text-indigo-800 border-indigo-200')
+              isSettlement 
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                : isPersonal 
+                  ? 'bg-purple-100 text-purple-800 border-purple-300'
+                  : (meta.theme?.badge || 'bg-indigo-100 text-indigo-800 border-indigo-200')
             }`}>
-              {isSettlement ? 'Settlement' : (transaction.category || 'Expense')}
+              {isSettlement ? 'Settlement' : isPersonal ? 'Personal Expense' : (transaction.category || 'Expense')}
             </span>
           </div>
 
@@ -128,46 +139,60 @@ export default function TransactionDetailModal({
               {currency}{transaction.amount?.toFixed(2)}
             </p>
             <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold">
-              Full Payment
+              {isPersonal ? 'Paid For Self' : 'Full Payment'}
             </span>
           </div>
         </div>
 
-        {/* Splits Breakdown */}
-        <div className="space-y-2.5">
-          <div className="flex justify-between items-center px-1">
-            <h4 className="font-extrabold text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-              <Users size={13} className="text-indigo-600" />
-              <span>{isSettlement ? 'Settlement Recipient' : 'Split Breakdown'}</span>
-            </h4>
-            <span className="text-[11px] text-slate-400 font-bold">
-              {(transaction.splits || []).length} {isSettlement ? 'Recipient' : 'Members'}
-            </span>
+        {/* Splits Breakdown or Personal Expense Summary */}
+        {isPersonal ? (
+          <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2 text-purple-900 font-extrabold text-xs uppercase tracking-wider">
+              <span>👤 Personal Expense (No Split)</span>
+            </div>
+            <p className="text-xs text-purple-800 font-medium">
+              {payerName} {isPayerMe ? '(you)' : ''} covered 100% of this expense ({currency}{transaction.amount?.toFixed(2)}) for personal purchases.
+            </p>
+            <p className="text-[11px] text-purple-600 font-semibold pt-1 border-t border-purple-200/60">
+              💡 No companions owe money or were charged for this transaction.
+            </p>
           </div>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="flex justify-between items-center px-1">
+              <h4 className="font-extrabold text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Users size={13} className="text-indigo-600" />
+                <span>{isSettlement ? 'Settlement Recipient' : 'Split Breakdown'}</span>
+              </h4>
+              <span className="text-[11px] text-slate-400 font-bold">
+                {splits.length} {isSettlement ? 'Recipient' : 'Members'}
+              </span>
+            </div>
 
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3 space-y-2">
-            {(transaction.splits || []).map((s, idx) => {
-              const splitUser = s.user || {};
-              const sName = splitUser.name || 'Companion';
-              const isMe = (splitUser._id || splitUser) === currentUser?._id;
-              return (
-                <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
-                      {sName.charAt(0).toUpperCase()}
+            <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3 space-y-2">
+              {splits.map((s, idx) => {
+                const splitUser = s.user || {};
+                const sName = splitUser.name || 'Companion';
+                const isMe = (splitUser._id || splitUser)?.toString() === currentUser?._id?.toString();
+                return (
+                  <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
+                        {sName.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="font-bold text-slate-800">
+                        {sName} {isMe ? '(You)' : ''}
+                      </span>
                     </div>
-                    <span className="font-bold text-slate-800">
-                      {sName} {isMe ? '(You)' : ''}
-                    </span>
+                    <div className="font-black text-slate-900 font-heading">
+                      {currency}{s.amount?.toFixed(2)}
+                    </div>
                   </div>
-                  <div className="font-black text-slate-900 font-heading">
-                    {currency}{s.amount?.toFixed(2)}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Delete Confirmation or Actions */}
         {canDelete && (

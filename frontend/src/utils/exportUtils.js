@@ -153,6 +153,8 @@ export const exportTripToCSV = (trip, transactions = [], companionDebts = [], us
     if (tx.type === 'settlement') {
       const recipient = tx.splits?.[0]?.user || tx.sharedBy?.[0];
       splitWith = recipient?.name || 'Recipient';
+    } else if (tx.splitType === 'self') {
+      splitWith = `${payerName} (Personal / Self)`;
     } else if (tx.splitType === 'individual') {
       splitWith = tx.splits?.[0]?.user?.name || '1 Person';
     } else if (tx.splitType === 'custom') {

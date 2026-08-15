@@ -123,6 +123,8 @@ export default function AddTransaction() {
   let activeSplitUsers = [];
   if (splitMode === 'all') {
     activeSplitUsers = members.map(m => m.user?._id || m.user);
+  } else if (splitMode === 'self') {
+    activeSplitUsers = payerId ? [payerId] : [user?._id];
   } else if (splitMode === 'individual') {
     activeSplitUsers = selectedUser ? [selectedUser] : [];
   } else if (splitMode === 'custom') {
@@ -233,6 +235,9 @@ export default function AddTransaction() {
         user: uId,
         amount: Math.round((numericAmount / finalSharedBy.length) * 100) / 100
       }));
+    } else if (splitMode === 'self') {
+      finalSharedBy = [payerId];
+      finalSplits = [{ user: payerId, amount: numericAmount }];
     } else if (splitMode === 'individual') {
       if (!selectedUser) {
         toast.error('Please select a companion for this expense.');
@@ -278,7 +283,7 @@ export default function AddTransaction() {
         sharedBy: finalSharedBy,
         splits: finalSplits,
       });
-      toast.success('Expense added & split among companions! 💸');
+      toast.success(splitMode === 'self' ? 'Personal expense logged! 👤' : 'Group expense logged & synced! 💸');
       navigate(`/trip/${id}`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to log expense.');
@@ -482,9 +487,64 @@ export default function AddTransaction() {
                   {numericAmount > 0 && !isCustomExact && (
                     <span className="text-xs font-extrabold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-xl flex items-center gap-1">
                       <Calculator size={13} />
-                      <span>{currency}{perPersonShare.toFixed(2)} / person</span>
+                      <span>{splitMode === 'self' ? `${currency}${numericAmount.toFixed(2)} (100% you)` : `${currency}${perPersonShare.toFixed(2)} / person`}</span>
                     </span>
                   )}
+                </div>
+
+                {/* Quick Split Mode Selector Pills */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setSplitMode('all'); setSelectedUser(''); setSelectedUsers([]); setIsCustomExact(false); }}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-xs flex flex-col items-center gap-1 transition-all border ${
+                      splitMode === 'all' 
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20' 
+                        : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>👥 Group</span>
+                    <span className={`text-[9px] font-medium ${splitMode === 'all' ? 'text-indigo-200' : 'text-slate-400'}`}>Split All</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSplitMode('self'); setSelectedUser(''); setSelectedUsers([]); setIsCustomExact(false); }}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-xs flex flex-col items-center gap-1 transition-all border ${
+                      splitMode === 'self' 
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-600/20' 
+                        : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-purple-50 hover:text-purple-700'
+                    }`}
+                  >
+                    <span>👤 Only Me</span>
+                    <span className={`text-[9px] font-medium ${splitMode === 'self' ? 'text-purple-200' : 'text-slate-400'}`}>No Split</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSplitMode('individual'); setSelectedUser(''); setSelectedUsers([]); setIsCustomExact(false); }}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-xs flex flex-col items-center gap-1 transition-all border ${
+                      splitMode === 'individual' 
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20' 
+                        : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>🎯 1-on-1</span>
+                    <span className={`text-[9px] font-medium ${splitMode === 'individual' ? 'text-indigo-200' : 'text-slate-400'}`}>1 Companion</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSplitMode('custom'); setSelectedUser(''); setSelectedUsers([]); setIsCustomExact(false); }}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-xs flex flex-col items-center gap-1 transition-all border ${
+                      splitMode === 'custom' 
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20' 
+                        : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>🎛️ Custom</span>
+                    <span className={`text-[9px] font-medium ${splitMode === 'custom' ? 'text-indigo-200' : 'text-slate-400'}`}>Pick Friends</span>
+                  </button>
                 </div>
                 
                 <select 
@@ -496,12 +556,32 @@ export default function AddTransaction() {
                     setSelectedUsers([]); 
                     setIsCustomExact(false);
                   }} 
-                  className="w-full p-4 font-bold text-xs sm:text-sm rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
+                  className="w-full p-3.5 font-bold text-xs sm:text-sm rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
                 >
                   <option value="all">Everyone in Trip (Split Equally)</option>
+                  <option value="self">Only for Myself (Personal Expense - No Split)</option>
                   <option value="individual">Specific Companion (Paid For 1 Person)</option>
                   <option value="custom">Custom Selection (Pick Friends)</option>
                 </select>
+
+                {/* Self / Personal Expense Explanation */}
+                {splitMode === 'self' && (
+                  <div className="bg-purple-50/80 border border-purple-200/80 rounded-2xl p-4 flex items-start gap-3.5 animate-in fade-in duration-150">
+                    <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-md shadow-purple-600/20 mt-0.5">
+                      👤
+                    </div>
+                    <div className="min-w-0">
+                      <h5 className="font-extrabold text-xs text-purple-950">Personal Expense (No Split)</h5>
+                      <p className="text-[11px] text-purple-700 font-medium mt-0.5">
+                        {numericAmount > 0 ? (
+                          <>100% of this <strong>{currency}{numericAmount.toFixed(2)}</strong> is for you. None of your companions will owe money or be billed.</>
+                        ) : (
+                          <>Logs this expense as a personal purchase. Companions will not be charged or owe any money.</>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Individual Split Companion Picker */}
                 {splitMode === 'individual' && (

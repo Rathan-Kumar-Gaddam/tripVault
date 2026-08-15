@@ -23,7 +23,7 @@ const transactionSchema = new mongoose.Schema(
     payer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     splitType: { 
       type: String, 
-      enum: ['all', 'individual', 'custom'], 
+      enum: ['all', 'individual', 'custom', 'self'], 
       default: 'all' 
     },
     splits: [splitSchema],

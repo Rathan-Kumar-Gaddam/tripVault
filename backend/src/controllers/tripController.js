@@ -2,6 +2,7 @@ import Trip from '../models/Trip.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import Transaction from '../models/Transaction.js';
+import FundRequest from '../models/FundRequest.js';
 // @desc    Create a new trip (User becomes Admin)
 // @route   POST /api/trips
 export const createTrip = async (req, res) => {
@@ -155,6 +156,16 @@ export const getTripById = async (req, res) => {
     
     if (!isMember) return res.status(403).json({ message: 'Access denied. You must join this trip first.' });
 
+    // Count pending requests where logged-in user must act
+    const pendingCount = await FundRequest.countDocuments({
+      tripId: trip._id,
+      $or: [
+        { targetUser: req.user._id, status: 'pending' },
+        { requester: req.user._id, status: 'payment_sent' },
+      ],
+    });
+
+    trip.pendingRequestsCount = pendingCount;
     res.json(trip);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -165,11 +176,32 @@ export const getTripById = async (req, res) => {
 // @route   GET /api/trips
 export const getUserTrips = async (req, res) => {
   try {
-    const trips = await Trip.find({ 'members.user': req.user._id })
+    const userId = req.user._id;
+    const trips = await Trip.find({ 'members.user': userId })
       .populate('members.user', 'name email phone avatar')
       .sort({ updatedAt: -1 })
       .lean();
-    res.json(trips);
+
+    // Query active requests where user must act across all user trips
+    const activeRequests = await FundRequest.find({
+      $or: [
+        { targetUser: userId, status: 'pending' },
+        { requester: userId, status: 'payment_sent' },
+      ],
+    }).select('tripId').lean();
+
+    const requestCountMap = {};
+    activeRequests.forEach((r) => {
+      const tId = r.tripId.toString();
+      requestCountMap[tId] = (requestCountMap[tId] || 0) + 1;
+    });
+
+    const tripsWithNotifications = trips.map((t) => ({
+      ...t,
+      pendingRequestsCount: requestCountMap[t._id.toString()] || 0,
+    }));
+
+    res.json(tripsWithNotifications);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
