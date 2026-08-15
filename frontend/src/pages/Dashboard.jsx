@@ -145,20 +145,39 @@ export default function Dashboard() {
     [members, transactions, user?._id]
   );
 
-  // Memoized Incoming and Outgoing Fund Requests
-  const incomingRequests = useMemo(
-    () => (fundRequests || []).filter(
-      (r) => (r.targetUser?._id || r.targetUser) === user?._id && r.status === 'pending'
-    ),
-    [fundRequests, user?._id]
-  );
+  // Memoized Action-Required Requests (where user must act: fund, confirm receipt, or verify settlement)
+  const actionRequiredRequests = useMemo(() => {
+    const myId = user?._id?.toString();
+    return (fundRequests || []).filter((r) => {
+      const targetId = (r.targetUser?._id || r.targetUser)?.toString();
+      const reqId = (r.requester?._id || r.requester)?.toString();
 
-  const outgoingRequests = useMemo(
-    () => (fundRequests || []).filter(
-      (r) => (r.requester?._id || r.requester) === user?._id && r.status === 'pending'
-    ),
-    [fundRequests, user?._id]
-  );
+      // Case 1: You are asked for funds (status: pending)
+      if (r.requestType === 'fund_request' && r.status === 'pending' && targetId === myId) return true;
+      // Case 2: You asked for funds, companion marked sent, you must confirm receipt! (status: payment_sent)
+      if (r.requestType === 'fund_request' && r.status === 'payment_sent' && reqId === myId) return true;
+      // Case 3: You are the receiver of a settlement payment (status: pending)
+      if (r.requestType === 'settlement' && r.status === 'pending' && targetId === myId) return true;
+      return false;
+    });
+  }, [fundRequests, user?._id]);
+
+  // Memoized Outgoing/Waiting Requests (where you are waiting on your companion)
+  const waitingRequests = useMemo(() => {
+    const myId = user?._id?.toString();
+    return (fundRequests || []).filter((r) => {
+      const targetId = (r.targetUser?._id || r.targetUser)?.toString();
+      const reqId = (r.requester?._id || r.requester)?.toString();
+
+      // Case 1: You asked for funds, waiting for companion to pay (status: pending)
+      if (r.requestType === 'fund_request' && r.status === 'pending' && reqId === myId) return true;
+      // Case 2: You paid/marked sent, waiting for requester to confirm receipt (status: payment_sent)
+      if (r.requestType === 'fund_request' && r.status === 'payment_sent' && targetId === myId) return true;
+      // Case 3: You sent a settlement payment, waiting for receiver to confirm (status: pending)
+      if (r.requestType === 'settlement' && r.status === 'pending' && reqId === myId) return true;
+      return false;
+    });
+  }, [fundRequests, user?._id]);
 
   // Memoized Group & Category Calculations
   const {
@@ -318,24 +337,26 @@ export default function Dashboard() {
     }
   };
 
-  // Handle Respond to Incoming Request (Accept & Confirm OR Decline)
-  const handleRespondRequest = async (requestId, action, requesterName, reqAmount, requestType) => {
+  // Handle Respond to Request: Funder marks sent, Requester confirms receipt, or Receiver verifies settlement
+  const handleRespondRequest = async (requestId, action, otherUserName, reqAmount, requestType) => {
     if (respondingId) return;
 
     try {
       setRespondingId(requestId);
-      await respondToFundRequest(requestId, action, id);
-      if (action === 'accept') {
-        if (requestType === 'settlement') {
-          toast.success(`Settlement confirmed! Confirmed receipt of ${currency}${reqAmount} from ${requesterName}. 🎉`);
-        } else {
-          toast.success(`Fund request accepted! Covered ${currency}${reqAmount} for ${requesterName}. 🎉`);
-        }
+      const res = await respondToFundRequest(requestId, action, id);
+      if (res?.message) {
+        toast.success(res.message);
+      } else if (action === 'mark_sent' || action === 'pay') {
+        toast.success(`Marked as sent! ${otherUserName} will confirm receipt before transaction is logged. 📩`);
+      } else if (action === 'confirm_receipt' || action === 'accept') {
+        toast.success(`Receipt confirmed! Transaction logged in vault. 🎉`);
+      } else if (action === 'not_received') {
+        toast('Marked as not received. Funder has been notified.', { icon: '⚠️' });
       } else {
         toast('Request declined.', { icon: 'ℹ️' });
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to process request.');
+      toast.error(err.response?.data?.message || err.message || 'Failed to process request.');
     } finally {
       setRespondingId(null);
     }
@@ -719,39 +740,64 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* INCOMING APPROVAL REQUESTS BANNER */}
-          {incomingRequests.length > 0 && (
+          {/* ========================================================================= */}
+          {/* 1. ACTION REQUIRED NOTIFICATION BANNERS (2-Step Verification Handshake)  */}
+          {/* ========================================================================= */}
+          {actionRequiredRequests.length > 0 && (
             <div className="space-y-3">
-              {incomingRequests.map((req) => {
+              {actionRequiredRequests.map((req) => {
                 const isSettlement = req.requestType === 'settlement';
+                const isPaymentSentConfirmation = req.requestType === 'fund_request' && req.status === 'payment_sent';
+                const isFunderApproval = req.requestType === 'fund_request' && req.status === 'pending';
+
                 return (
                   <div 
                     key={req._id}
-                    className={`border-2 rounded-3xl p-4 shadow-lg animate-in fade-in slide-in-from-top-2 duration-300 ${
-                      isSettlement
-                        ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/15 to-emerald-500/10 border-emerald-400/60 shadow-emerald-500/10'
-                        : 'bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border-amber-400/60 shadow-amber-500/10'
+                    className={`border-2 rounded-3xl p-4 sm:p-5 shadow-lg animate-in fade-in slide-in-from-top-2 duration-300 ${
+                      isPaymentSentConfirmation
+                        ? 'bg-gradient-to-r from-indigo-500/10 via-purple-500/15 to-indigo-500/10 border-indigo-400/60 shadow-indigo-500/10'
+                        : isSettlement
+                          ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/15 to-emerald-500/10 border-emerald-400/60 shadow-emerald-500/10'
+                          : 'bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border-amber-400/60 shadow-amber-500/10'
                     }`}
                   >
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className={`p-2.5 rounded-2xl shrink-0 ${
-                        isSettlement ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                    <div className="flex items-start gap-3.5 mb-3.5">
+                      <div className={`p-2.5 sm:p-3 rounded-2xl shrink-0 ${
+                        isPaymentSentConfirmation 
+                          ? 'bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20'
+                          : isSettlement 
+                            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' 
+                            : 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
                       }`}>
-                        {isSettlement ? <HandCoins size={20} /> : <HelpCircle size={20} />}
+                        {isPaymentSentConfirmation ? <ShieldCheck size={22} /> : isSettlement ? <HandCoins size={22} /> : <HelpCircle size={22} />}
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                            isSettlement ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                            isPaymentSentConfirmation
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : isSettlement 
+                                ? 'bg-emerald-100 text-emerald-800' 
+                                : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {isSettlement ? 'Settlement Verification' : 'Fund Request'}
+                            {isPaymentSentConfirmation 
+                              ? 'Confirm Funds Received' 
+                              : isSettlement 
+                                ? 'Settlement Verification' 
+                                : 'Incoming Fund Request'}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-medium">Action Required</span>
+                          <span className="text-[10px] text-rose-600 font-extrabold uppercase bg-rose-50 px-2 py-0.5 rounded-md shrink-0">
+                            Action Required
+                          </span>
                         </div>
 
-                        <h4 className="font-extrabold text-slate-900 text-sm mt-1">
-                          {isSettlement ? (
+                        <h4 className="font-extrabold text-slate-900 text-sm sm:text-base mt-1.5 leading-snug">
+                          {isPaymentSentConfirmation ? (
+                            <>
+                              {req.targetUser?.name} marked <span className="text-indigo-700 font-black">{currency}{req.amount.toFixed(2)}</span> as transferred
+                            </>
+                          ) : isSettlement ? (
                             <>
                               {req.requester?.name} sent <span className="text-emerald-700 font-black">{currency}{req.amount.toFixed(2)}</span> settlement
                             </>
@@ -764,40 +810,105 @@ export default function Dashboard() {
                         <p className="text-xs text-slate-600 font-medium mt-0.5 italic">
                           "{req.description}"
                         </p>
-                        {isSettlement && (
-                          <p className="text-[11px] text-emerald-800 font-semibold mt-1">
-                            Please confirm once you receive the funds in your account/cash.
-                          </p>
-                        )}
+                        
+                        <p className="text-[11px] font-semibold mt-1.5 text-slate-700">
+                          {isPaymentSentConfirmation && (
+                            <span className="text-purple-900 font-bold">
+                              💡 Did you receive the money in your bank/cash? Click confirm below to log this transaction in the vault.
+                            </span>
+                          )}
+                          {isSettlement && (
+                            <span className="text-emerald-800 font-medium">
+                              Please verify you received funds in your account/cash before confirming.
+                            </span>
+                          )}
+                          {isFunderApproval && (
+                            <span className="text-amber-900 font-medium">
+                              Transfer the amount to {req.requester?.name} via UPI/Cash, then click "Mark Sent".
+                            </span>
+                          )}
+                        </p>
                       </div>
                     </div>
 
-                    {/* Action Buttons: Accept & Confirm vs Decline */}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleRespondRequest(req._id, 'decline', req.requester?.name, req.amount, req.requestType)}
-                        disabled={respondingId === req._id}
-                        className="flex-1 py-2.5 bg-white/80 hover:bg-white text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        Decline
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRespondRequest(req._id, 'accept', req.requester?.name, req.amount, req.requestType)}
-                        disabled={respondingId === req._id}
-                        className="flex-1 py-2.5 text-white font-bold rounded-xl text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20"
-                      >
-                        <Check size={14} strokeWidth={3} />
-                        <span>
-                          {respondingId === req._id 
-                            ? 'Processing...' 
-                            : isSettlement 
-                              ? `Confirm Receipt (${currency}${req.amount.toFixed(2)})`
-                              : `Accept & Pay ${currency}${req.amount.toFixed(2)}`
-                          }
-                        </span>
-                      </button>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 pt-1 border-t border-black/5">
+                      {isPaymentSentConfirmation ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRespondRequest(req._id, 'not_received', req.targetUser?.name, req.amount, 'fund_request')}
+                            disabled={respondingId === req._id}
+                            className="flex-1 py-2.5 bg-white hover:bg-rose-50 text-rose-700 font-bold rounded-xl text-xs border border-rose-200 shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            Not Received
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRespondRequest(req._id, 'confirm_receipt', req.targetUser?.name, req.amount, 'fund_request')}
+                            disabled={respondingId === req._id}
+                            className="flex-2 py-2.5 text-white font-extrabold rounded-xl text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20 px-4"
+                          >
+                            <Check size={16} strokeWidth={3} />
+                            <span>
+                              {respondingId === req._id 
+                                ? 'Logging Transaction...' 
+                                : `Confirm Receipt & Log (${currency}${req.amount.toFixed(2)})`
+                              }
+                            </span>
+                          </button>
+                        </>
+                      ) : isSettlement ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRespondRequest(req._id, 'decline', req.requester?.name, req.amount, 'settlement')}
+                            disabled={respondingId === req._id}
+                            className="flex-1 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRespondRequest(req._id, 'confirm_receipt', req.requester?.name, req.amount, 'settlement')}
+                            disabled={respondingId === req._id}
+                            className="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20"
+                          >
+                            <Check size={16} strokeWidth={3} />
+                            <span>
+                              {respondingId === req._id 
+                                ? 'Verifying...' 
+                                : `Confirm Receipt (${currency}${req.amount.toFixed(2)})`
+                              }
+                            </span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRespondRequest(req._id, 'decline', req.requester?.name, req.amount, 'fund_request')}
+                            disabled={respondingId === req._id}
+                            className="flex-1 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRespondRequest(req._id, 'mark_sent', req.requester?.name, req.amount, 'fund_request')}
+                            disabled={respondingId === req._id}
+                            className="flex-2 py-2.5 text-white font-extrabold rounded-xl text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-600/20 px-4"
+                          >
+                            <Send size={14} strokeWidth={2.5} />
+                            <span>
+                              {respondingId === req._id 
+                                ? 'Updating...' 
+                                : `I Transferred ${currency}${req.amount.toFixed(2)} (Mark Sent)`
+                              }
+                            </span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -805,38 +916,54 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* OUTGOING PENDING REQUEST TRACKER */}
-          {outgoingRequests.length > 0 && (
+          {/* ========================================================================= */}
+          {/* 2. OUTGOING / WAITING TRACKER                                             */}
+          {/* ========================================================================= */}
+          {waitingRequests.length > 0 && (
             <div className="space-y-2">
-              {outgoingRequests.map((req) => {
+              {waitingRequests.map((req) => {
                 const isSettlement = req.requestType === 'settlement';
+                const isFunderWaiting = req.requestType === 'fund_request' && req.status === 'payment_sent';
+                const isRequesterWaiting = req.requestType === 'fund_request' && req.status === 'pending';
+
                 return (
                   <div 
                     key={req._id}
-                    className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs"
+                    className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 text-xs"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base animate-pulse">⏳</span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-base animate-pulse">
+                        {isFunderWaiting ? '💸' : '⏳'}
+                      </span>
                       <div className="min-w-0">
                         <p className="font-bold text-indigo-950 truncate">
-                          {isSettlement ? (
+                          {isFunderWaiting ? (
+                            <>Payment of <strong>{currency}{req.amount.toFixed(2)}</strong> sent to {req.requester?.name}</>
+                          ) : isSettlement ? (
                             <>Settlement of <strong>{currency}{req.amount.toFixed(2)}</strong> sent to {req.targetUser?.name}</>
                           ) : (
                             <>Requested <strong>{currency}{req.amount.toFixed(2)}</strong> from {req.targetUser?.name}</>
                           )}
                         </p>
                         <p className="text-[11px] text-indigo-600 truncate font-medium">
-                          {isSettlement ? 'Waiting for receiver to confirm receipt' : 'Waiting for approval'} • "{req.description}"
+                          {isFunderWaiting 
+                            ? `Waiting for ${req.requester?.name} to confirm receipt before transaction logs`
+                            : isSettlement 
+                              ? 'Waiting for receiver to confirm receipt' 
+                              : `Waiting for ${req.targetUser?.name} to transfer funds`
+                          } • "{req.description}"
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCancelRequest(req._id)}
-                      className="text-[11px] font-bold text-slate-500 hover:text-rose-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shrink-0 shadow-sm"
-                    >
-                      Cancel
-                    </button>
+                    {isRequesterWaiting && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelRequest(req._id)}
+                        className="text-[11px] font-bold text-slate-500 hover:text-rose-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shrink-0 shadow-sm active:scale-95 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 );
               })}

@@ -16,10 +16,12 @@ const fundRequestSchema = new mongoose.Schema(
     category: { type: String, default: 'Loan / Cash' },
     status: {
       type: String,
-      enum: ['pending', 'accepted', 'declined', 'cancelled'],
+      enum: ['pending', 'payment_sent', 'accepted', 'declined', 'cancelled'],
       default: 'pending',
     },
     transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+    paymentSentAt: { type: Date },
+    paymentNote: { type: String, trim: true },
     respondedAt: { type: Date },
   },
   { timestamps: true }

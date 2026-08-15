@@ -106,13 +106,16 @@ export const getTripRequests = async (req, res) => {
   }
 };
 
-// @desc    Respond to a request (Accept & Log Transaction OR Decline)
+// @desc    Respond to a request:
+//          - Funder marks payment sent or declines
+//          - Requester confirms receipt (creating transaction) or reports not received
+//          - Settlement recipient confirms receipt or declines
 // @route   PUT /api/requests/:id/respond
 export const respondToRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const { action } = req.body; // 'accept' | 'decline'
-    const userId = req.user._id;
+    const { action, note } = req.body; 
+    const userId = req.user._id.toString();
 
     const fundRequest = await FundRequest.findById(id)
       .populate('requester', 'name email phone avatar')
@@ -122,22 +125,25 @@ export const respondToRequest = async (req, res) => {
       return res.status(404).json({ message: 'Request not found.' });
     }
 
-    // Only the target companion (receiver) can accept or decline
-    if (fundRequest.targetUser._id.toString() !== userId.toString()) {
-      return res.status(403).json({ message: 'Only the recipient/companion can approve or decline this request.' });
-    }
+    const requesterId = fundRequest.requester._id.toString();
+    const targetUserId = fundRequest.targetUser._id.toString();
 
-    if (fundRequest.status !== 'pending') {
-      return res.status(400).json({ message: `This request has already been ${fundRequest.status}.` });
-    }
+    // ==========================================
+    // FLOW A: SETTLEMENT REQUEST
+    // ==========================================
+    if (fundRequest.requestType === 'settlement') {
+      // Only targetUser (the recipient of settlement) can confirm receipt or decline
+      if (targetUserId !== userId) {
+        return res.status(403).json({ message: 'Only the recipient can confirm or decline this settlement.' });
+      }
 
-    if (action === 'accept') {
-      let transaction;
+      if (fundRequest.status !== 'pending') {
+        return res.status(400).json({ message: `This settlement has already been ${fundRequest.status}.` });
+      }
 
-      if (fundRequest.requestType === 'settlement') {
-        // Settlement: Requester (payer) sent money to TargetUser (receiver).
-        // Receiver confirms receipt -> Creates official settlement transaction.
-        transaction = await Transaction.create({
+      if (action === 'accept' || action === 'confirm_receipt') {
+        // Create settlement transaction
+        const transaction = await Transaction.create({
           tripId: fundRequest.tripId,
           type: 'settlement',
           amount: fundRequest.amount,
@@ -150,56 +156,120 @@ export const respondToRequest = async (req, res) => {
           sharedBy: [fundRequest.targetUser._id],
           createdBy: fundRequest.requester._id,
         });
-      } else {
-        // Fund Request: TargetUser covers an expense for Requester
-        transaction = await Transaction.create({
-          tripId: fundRequest.tripId,
-          type: 'expense',
-          amount: fundRequest.amount,
-          description: `Covered for ${fundRequest.requester.name}: ${fundRequest.description}`,
-          category: fundRequest.category || 'Loan / Cash',
-          payer: fundRequest.targetUser._id, // Giver pays
-          splitType: 'individual',
-          splits: [{ user: fundRequest.requester._id, amount: fundRequest.amount }],
-          sharedBy: [fundRequest.requester._id],
-          createdBy: userId,
+
+        await syncTripBalances(fundRequest.tripId);
+
+        fundRequest.status = 'accepted';
+        fundRequest.transactionId = transaction._id;
+        fundRequest.respondedAt = new Date();
+        await fundRequest.save();
+
+        return res.json({
+          message: `Settlement confirmed! Confirmed receipt of ${fundRequest.amount} from ${fundRequest.requester.name}. 🎉`,
+          request: fundRequest,
+          transaction,
         });
+      } else if (action === 'decline') {
+        fundRequest.status = 'declined';
+        fundRequest.respondedAt = new Date();
+        await fundRequest.save();
+
+        return res.json({
+          message: 'Settlement payment declined.',
+          request: fundRequest,
+        });
+      } else {
+        return res.status(400).json({ message: 'Invalid action for settlement request.' });
+      }
+    }
+
+    // ==========================================
+    // FLOW B: FUND REQUEST (2-STEP HANDSHAKE)
+    // ==========================================
+    if (fundRequest.requestType === 'fund_request') {
+      
+      // Step 2: Funder (targetUser) marks payment sent or declines
+      if (fundRequest.status === 'pending') {
+        if (targetUserId !== userId) {
+          return res.status(403).json({ message: 'Only the requested companion can fund or decline this request.' });
+        }
+
+        if (action === 'mark_sent' || action === 'pay' || action === 'accept') {
+          fundRequest.status = 'payment_sent';
+          fundRequest.paymentSentAt = new Date();
+          if (note) fundRequest.paymentNote = note.trim();
+          await fundRequest.save();
+
+          return res.json({
+            message: `Marked as sent! ${fundRequest.requester.name} will confirm receipt before the transaction is logged. 📩`,
+            request: fundRequest,
+          });
+        } else if (action === 'decline') {
+          fundRequest.status = 'declined';
+          fundRequest.respondedAt = new Date();
+          await fundRequest.save();
+
+          return res.json({
+            message: 'Fund request declined.',
+            request: fundRequest,
+          });
+        } else {
+          return res.status(400).json({ message: "Invalid action. Must be 'mark_sent' or 'decline'." });
+        }
       }
 
-      // 2. Synchronize trip balances
-      await syncTripBalances(fundRequest.tripId);
+      // Step 3: Requester confirms receipt or reports not received
+      if (fundRequest.status === 'payment_sent') {
+        if (requesterId !== userId) {
+          return res.status(403).json({ message: 'Only the requester can confirm receipt of the funds.' });
+        }
 
-      // 3. Mark request as accepted
-      fundRequest.status = 'accepted';
-      fundRequest.transactionId = transaction._id;
-      fundRequest.respondedAt = new Date();
-      await fundRequest.save();
+        if (action === 'confirm_receipt' || action === 'accept') {
+          // Requester confirmed receipt -> Officially log the transaction in the ledger
+          const transaction = await Transaction.create({
+            tripId: fundRequest.tripId,
+            type: 'expense',
+            amount: fundRequest.amount,
+            description: `Covered by ${fundRequest.targetUser.name}: ${fundRequest.description}`,
+            category: fundRequest.category || 'Loan / Cash',
+            payer: fundRequest.targetUser._id, // Funder is the payer
+            splitType: 'individual',
+            splits: [{ user: fundRequest.requester._id, amount: fundRequest.amount }],
+            sharedBy: [fundRequest.requester._id],
+            createdBy: fundRequest.targetUser._id,
+          });
 
-      const successMsg = fundRequest.requestType === 'settlement'
-        ? `Settlement confirmed! Confirmed receipt of ${fundRequest.amount} from ${fundRequest.requester.name}. 🎉`
-        : `Fund request accepted! Transferred ${fundRequest.amount} to ${fundRequest.requester.name}. 🎉`;
+          await syncTripBalances(fundRequest.tripId);
 
-      return res.json({ 
-        message: successMsg,
-        request: fundRequest,
-        transaction,
-      });
-    } else if (action === 'decline') {
-      fundRequest.status = 'declined';
-      fundRequest.respondedAt = new Date();
-      await fundRequest.save();
+          fundRequest.status = 'accepted';
+          fundRequest.transactionId = transaction._id;
+          fundRequest.respondedAt = new Date();
+          await fundRequest.save();
 
-      const declineMsg = fundRequest.requestType === 'settlement'
-        ? 'Settlement payment declined.'
-        : 'Fund request declined.';
+          return res.json({
+            message: `Receipt confirmed! Expense of ${fundRequest.amount} successfully logged in vault. 🎉`,
+            request: fundRequest,
+            transaction,
+          });
+        } else if (action === 'not_received') {
+          // Reset to pending so funder is alerted and can resend
+          fundRequest.status = 'pending';
+          fundRequest.paymentSentAt = null;
+          await fundRequest.save();
 
-      return res.json({ 
-        message: declineMsg,
-        request: fundRequest,
-      });
-    } else {
-      return res.status(400).json({ message: "Invalid action. Must be 'accept' or 'decline'." });
+          return res.json({
+            message: `Marked as not received. ${fundRequest.targetUser.name} has been notified to check their transfer.`,
+            request: fundRequest,
+          });
+        } else {
+          return res.status(400).json({ message: "Invalid action. Must be 'confirm_receipt' or 'not_received'." });
+        }
+      }
+
+      return res.status(400).json({ message: `This request is already ${fundRequest.status}.` });
     }
+
+    return res.status(400).json({ message: 'Unknown request type.' });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to respond to request' });
   }
