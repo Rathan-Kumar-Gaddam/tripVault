@@ -49,6 +49,7 @@ import { DashboardSkeleton } from '../components/SkeletonLoader';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 import ShareTripModal from '../components/ShareTripModal';
 import RequestsHubModal from '../components/RequestsHubModal';
+import CustomSelect from '../components/CustomSelect';
 import { getCategoryMeta } from '../utils/categoryUtils';
 
 const PRESET_BUDGETS = [10000, 25000, 50000, 100000];
@@ -1465,25 +1466,29 @@ export default function Dashboard() {
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   Ask Whom? (Companion)
                 </label>
-                <select
+                <CustomSelect
                   value={askTargetUser}
-                  onChange={(e) => setAskTargetUser(e.target.value)}
-                  required
+                  onChange={(val) => setAskTargetUser(val)}
+                  placeholder="Select Companion..."
                   disabled={isAsking}
-                  className="w-full p-3.5 font-bold text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-amber-500"
-                >
-                  <option value="">Select Companion...</option>
-                  {members.map((m) => {
-                    const mUser = m.user || m;
-                    const uid = (mUser?._id || mUser)?.toString();
-                    if (uid === user?._id?.toString()) return null;
-                    return (
-                      <option key={uid} value={uid}>
-                        {mUser?.name}
-                      </option>
-                    );
-                  })}
-                </select>
+                  options={members
+                    .filter((m) => {
+                      const mUser = m.user || m;
+                      const uid = (mUser?._id || mUser)?.toString();
+                      return uid !== user?._id?.toString();
+                    })
+                    .map((m) => {
+                      const mUser = m.user || m;
+                      const uid = (mUser?._id || mUser)?.toString();
+                      return {
+                        value: uid,
+                        label: mUser?.name || 'Companion',
+                        avatar: mUser?.avatar,
+                        initials: mUser?.name?.charAt(0).toUpperCase() || '?',
+                        sublabel: m.role === 'admin' ? 'Organizer' : 'Member',
+                      };
+                    })}
+                />
               </div>
 
               {/* Amount Input */}

@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
 import CategoryPicker from '../components/CategoryPicker';
+import CustomSelect from '../components/CustomSelect';
 
 const QUICK_AMOUNTS = [100, 500, 1000, 2000];
 
@@ -547,22 +548,22 @@ export default function AddTransaction() {
                   </button>
                 </div>
                 
-                <select 
-                  value={splitMode} 
+                <CustomSelect
+                  value={splitMode}
                   disabled={isSubmitting}
-                  onChange={(e) => { 
-                    setSplitMode(e.target.value); 
-                    setSelectedUser(''); 
-                    setSelectedUsers([]); 
+                  onChange={(val) => {
+                    setSplitMode(val);
+                    setSelectedUser('');
+                    setSelectedUsers([]);
                     setIsCustomExact(false);
-                  }} 
-                  className="w-full p-3.5 font-bold text-xs sm:text-sm rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
-                >
-                  <option value="all">Everyone in Trip (Split Equally)</option>
-                  <option value="self">Only for Myself (Personal Expense - No Split)</option>
-                  <option value="individual">Specific Companion (Paid For 1 Person)</option>
-                  <option value="custom">Custom Selection (Pick Friends)</option>
-                </select>
+                  }}
+                  options={[
+                    { value: 'all', label: 'Everyone in Trip', sublabel: 'Split equally across all members', icon: '👥' },
+                    { value: 'self', label: 'Only for Myself', sublabel: 'Personal expense - No split', icon: '👤' },
+                    { value: 'individual', label: 'Specific Companion', sublabel: '1-on-1 expense paid for 1 friend', icon: '🎯' },
+                    { value: 'custom', label: 'Custom Selection', sublabel: 'Pick specific friends or custom amounts', icon: '🎛️' },
+                  ]}
+                />
 
                 {/* Self / Personal Expense Explanation */}
                 {splitMode === 'self' && (
