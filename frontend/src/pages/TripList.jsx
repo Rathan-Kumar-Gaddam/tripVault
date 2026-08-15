@@ -377,123 +377,152 @@ export default function TripsList() {
       </div>
 
       {/* ========================================================================= */}
-      {/* 4. EXPANDABLE NEW TRIP VAULT CREATOR                                     */}
+      {/* 4. RESPONSIVE MODAL DIALOG FOR TRIP VAULT CREATION                        */}
       {/* ========================================================================= */}
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white p-6 sm:p-7 rounded-[2.5rem] shadow-xl border border-indigo-100 mb-8 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
-                <Plane size={22} />
+        <div 
+          onClick={() => setShowForm(false)}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-xl rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl border border-slate-200/80 overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-6 duration-300"
+          >
+            {/* Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-b from-slate-50/90 to-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
+                  <Plane size={22} />
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 font-heading">
+                    Create New Trip Vault
+                  </h2>
+                  <p className="text-xs text-slate-400 font-medium">
+                    Set up a shared group ledger with custom currency & budget
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="font-extrabold text-slate-900 text-base sm:text-lg font-heading">
-                  Create New Trip Vault
-                </h2>
-                <p className="text-xs text-slate-400 font-medium">
-                  Set up a shared group ledger with companion invites and custom currency
-                </p>
-              </div>
-            </div>
-            <button 
-              type="button" 
-              onClick={() => setShowForm(false)} 
-              className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-xl"
-            >
-              <X size={20} />
-            </button>
-          </div>
 
-          {/* Quick preset destination chips */}
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
-              Popular Presets (Tap to Autofill):
-            </label>
-            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-              {PRESET_DESTINATIONS.map((preset) => (
-                <button
-                  key={preset.name}
-                  type="button"
-                  onClick={() => { 
-                    setTripName(preset.name); 
-                    setCurrency(preset.currency); 
-                    setTripBudget(preset.budget?.toString() || '');
-                  }}
-                  className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-700 whitespace-nowrap active:scale-95 transition-all shadow-xs"
-                >
-                  {preset.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <div className="sm:col-span-6">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
-                Trip Name / Destination
-              </label>
-              <input 
-                type="text"
-                value={tripName}
-                onChange={(e) => setTripName(e.target.value)}
-                placeholder="e.g. 🏖️ Goa Summer 2026" 
-                required 
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
                 disabled={isCreating}
-                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
-              />
-            </div>
-
-            <div className="sm:col-span-3">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
-                Currency
-              </label>
-              <select 
-                value={currency} 
-                onChange={(e) => setCurrency(e.target.value)}
-                disabled={isCreating}
-                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 font-extrabold text-xs sm:text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
+                className="p-2 rounded-2xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 active:scale-90 transition-all disabled:opacity-50"
+                title="Close"
               >
-                {CURRENCIES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
+                <X size={20} />
+              </button>
             </div>
 
-            <div className="sm:col-span-3">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
-                Budget Limit (Optional)
-              </label>
-              <input 
-                type="number"
-                min="0"
-                step="100"
-                value={tripBudget}
-                onChange={(e) => setTripBudget(e.target.value)}
-                placeholder="e.g. 50000" 
-                disabled={isCreating}
-                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
-              />
-            </div>
-          </div>
+            {/* Form Content */}
+            <form onSubmit={handleCreate} className="p-5 sm:p-6 overflow-y-auto no-scrollbar flex flex-col gap-4">
+              {/* Quick preset destination chips */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
+                  Popular Presets (Tap to Autofill):
+                </label>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {PRESET_DESTINATIONS.map((preset) => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => { 
+                        setTripName(preset.name); 
+                        setCurrency(preset.currency); 
+                        setTripBudget(preset.budget?.toString() || '');
+                      }}
+                      className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-700 whitespace-nowrap active:scale-95 transition-all shadow-xs"
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          <div className="flex gap-3 mt-2">
-            <button 
-              type="button" 
-              onClick={() => setShowForm(false)} 
-              disabled={isCreating}
-              className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm rounded-2xl hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              disabled={isCreating || !tripName.trim()}
-              className="flex-2 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/25 hover:opacity-95 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <span>{isCreating ? 'Creating Vault...' : 'Create Vault & Invite Friends 🚀'}</span>
-            </button>
+              <div className="flex flex-col gap-3.5">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5 px-1">
+                    Trip Name / Destination
+                  </label>
+                  <input 
+                    type="text"
+                    value={tripName}
+                    onChange={(e) => setTripName(e.target.value)}
+                    placeholder="e.g. 🏖️ Goa Summer 2026" 
+                    required 
+                    autoFocus
+                    disabled={isCreating}
+                    className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5 px-1">
+                      Vault Currency
+                    </label>
+                    <select 
+                      value={currency} 
+                      onChange={(e) => setCurrency(e.target.value)}
+                      disabled={isCreating}
+                      className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 font-extrabold text-xs sm:text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all disabled:opacity-70 cursor-pointer"
+                    >
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5 px-1">
+                      Budget Target (Optional)
+                    </label>
+                    <input 
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={tripBudget}
+                      onChange={(e) => setTripBudget(e.target.value)}
+                      placeholder="e.g. 50000" 
+                      disabled={isCreating}
+                      className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 mt-4 pt-3 border-t border-slate-100">
+                <button 
+                  type="button" 
+                  onClick={() => setShowForm(false)} 
+                  disabled={isCreating}
+                  className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm rounded-2xl hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isCreating || !tripName.trim()}
+                  className="flex-2 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-xl shadow-indigo-600/25 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isCreating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Creating Vault...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Create Vault & Unlock</span>
+                      <ArrowRight size={16} />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       )}
 
       {/* ========================================================================= */}
