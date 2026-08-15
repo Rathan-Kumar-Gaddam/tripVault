@@ -175,7 +175,7 @@ export default function TripsList() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 md:p-8 lg:p-10 pb-32">
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-8 sm:pb-12">
       
       {/* ========================================================================= */}
       {/* 1. TOP MODERN HEADER                                                      */}

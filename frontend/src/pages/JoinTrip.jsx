@@ -122,7 +122,7 @@ export default function JoinTrip() {
   }
 
   return (
-    <div className="min-h-full flex flex-col justify-center px-6 py-10 relative">
+    <div className="flex flex-col justify-center px-4 sm:px-6 py-6 sm:py-10 pb-8 relative">
       {/* Brand Header */}
       <div className="mb-6 text-center">
         <div className="w-14 h-14 bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-3 shadow-xl shadow-indigo-500/25">

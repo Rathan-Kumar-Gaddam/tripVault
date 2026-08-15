@@ -35,7 +35,7 @@ function App() {
         <div className="w-full max-w-5xl xl:max-w-6xl min-h-screen flex flex-col bg-slate-50 text-slate-900 shadow-2xl sm:border-x sm:border-slate-200/80 relative">
           
           {/* Scrollable Content Area with Suspense Lazy Loading */}
-          <main className="flex-1 w-full pb-28 sm:pb-24">
+          <main className="flex-1 w-full">
             <Suspense fallback={<TripListSkeleton />}>
               <Routes>
                 <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/" />} />

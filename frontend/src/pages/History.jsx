@@ -222,7 +222,7 @@ export default function History() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28 sm:pb-24">
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-24 sm:pb-20">
       {/* Header */}
       <header className="flex justify-between items-center mb-6 sm:mb-8">
         <div className="flex items-center gap-3">

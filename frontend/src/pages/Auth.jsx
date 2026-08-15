@@ -125,7 +125,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-full flex flex-col justify-center px-6 py-10 relative">
+    <div className="flex flex-col justify-center px-4 sm:px-6 py-6 sm:py-10 pb-8 relative">
       
       {/* Brand Header */}
       <div className="mb-8 text-center">

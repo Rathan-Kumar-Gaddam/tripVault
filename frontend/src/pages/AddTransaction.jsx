@@ -292,7 +292,7 @@ export default function AddTransaction() {
   };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28 sm:pb-24">
+    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-24 sm:pb-20">
       {/* Top Header */}
       <header className="flex justify-between items-center mb-6 sm:mb-8">
         <button 

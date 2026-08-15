@@ -492,7 +492,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-3 sm:p-6 md:p-8 lg:p-10 pb-32">
+    <div className="p-3 sm:p-6 md:p-8 lg:p-10 pb-24 sm:pb-20">
       
       {/* ========================================================================= */}
       {/* 1. TOP RESPONSIVE HEADER                                                  */}
