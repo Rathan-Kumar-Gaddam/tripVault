@@ -30,6 +30,15 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Parses incoming JSON requests with photo support
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Health check endpoints for UptimeRobot / cron keep-alive
+app.get(['/health', '/api/health'], (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(), 
+    service: 'TripVault API' 
+  });
+});
+
 // Mount Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/trips', tripRoutes);

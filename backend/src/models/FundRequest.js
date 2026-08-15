@@ -25,4 +25,9 @@ const fundRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for fast lookup of active requests and user notifications
+fundRequestSchema.index({ tripId: 1, status: 1 });
+fundRequestSchema.index({ requester: 1 });
+fundRequestSchema.index({ targetUser: 1 });
+
 export default mongoose.model('FundRequest', fundRequestSchema);

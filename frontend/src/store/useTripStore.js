@@ -22,6 +22,7 @@ api.interceptors.response.use(
       // Clear stale auth data
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('cached_trips');
       useTripStore.setState({ 
         user: null, 
         trips: [], 
@@ -165,9 +166,18 @@ const getErrorMessage = (err, fallback) => {
   return fallback || err.message || 'Request failed';
 };
 
+const getStoredJSON = (key, fallback) => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const useTripStore = create((set, get) => ({
-  user: JSON.parse(localStorage.getItem('user')) || null,
-  trips: [],
+  user: getStoredJSON('user', null),
+  trips: getStoredJSON('cached_trips', []),
   currentTrip: null,
   transactions: [],
   fundRequests: [],
@@ -252,14 +262,19 @@ const useTripStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('cached_trips');
     set({ user: null, trips: [], currentTrip: null, transactions: [], fundRequests: [], error: null });
   },
 
-  // Trips & Balances
+  // Trips & Balances (Stale-While-Revalidate: Instant render with cache, silent background sync)
   fetchTrips: async () => {
-    set({ isLoading: true });
+    // Only set loading to true if there is no cached data to show immediately
+    if (get().trips.length === 0) {
+      set({ isLoading: true });
+    }
     try {
       const { data } = await api.get('/trips');
+      localStorage.setItem('cached_trips', JSON.stringify(data));
       set({ trips: data, isLoading: false });
     } catch (err) {
       set({ isLoading: false });
@@ -268,24 +283,34 @@ const useTripStore = create((set, get) => ({
 
   createTrip: async (tripData) => {
     const { data } = await api.post('/trips', tripData);
-    set((state) => ({ trips: [...state.trips, data] }));
+    set((state) => {
+      const updatedTrips = [...state.trips, data];
+      localStorage.setItem('cached_trips', JSON.stringify(updatedTrips));
+      return { trips: updatedTrips };
+    });
     return data;
   },
 
   updateTrip: async (tripId, tripData) => {
     const { data } = await api.put(`/trips/${tripId}`, tripData);
-    set((state) => ({
-      currentTrip: state.currentTrip?._id === tripId ? data : state.currentTrip,
-      trips: state.trips.map((t) => (t._id === tripId ? data : t)),
-    }));
+    set((state) => {
+      const updatedTrips = state.trips.map((t) => (t._id === tripId ? data : t));
+      localStorage.setItem('cached_trips', JSON.stringify(updatedTrips));
+      return {
+        currentTrip: state.currentTrip?._id === tripId ? data : state.currentTrip,
+        trips: updatedTrips,
+      };
+    });
     return data;
   },
   
   deleteTrip: async (tripId) => {
     await api.delete(`/trips/${tripId}`);
-    set((state) => ({ 
-      trips: state.trips.filter((trip) => trip._id !== tripId) 
-    }));
+    set((state) => {
+      const updatedTrips = state.trips.filter((trip) => trip._id !== tripId);
+      localStorage.setItem('cached_trips', JSON.stringify(updatedTrips));
+      return { trips: updatedTrips };
+    });
   },
 
   fetchTripDetails: async (tripId) => {

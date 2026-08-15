@@ -18,4 +18,7 @@ const tripSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for fast lookup on user's trips
+tripSchema.index({ 'members.user': 1, updatedAt: -1 });
+
 export default mongoose.model('Trip', tripSchema);

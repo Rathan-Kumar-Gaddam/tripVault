@@ -1,15 +1,19 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import useTripStore from './store/useTripStore';
 import BottomNav from './components/BottomNav';
-import Auth from './pages/Auth';
-import TripsList from './pages/TripList';
-import Dashboard from './pages/Dashboard';
-import AddTransaction from './pages/AddTransaction';
-import AddMember from './pages/AddMember';
-import History from './pages/History';
-import Profile from './pages/Profile';
-import JoinTrip from './pages/JoinTrip';
+import { TripListSkeleton } from './components/SkeletonLoader';
+
+// Lazy-loaded page components for instant initial bundle loading
+const Auth = lazy(() => import('./pages/Auth'));
+const TripsList = lazy(() => import('./pages/TripList'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const AddTransaction = lazy(() => import('./pages/AddTransaction'));
+const AddMember = lazy(() => import('./pages/AddMember'));
+const History = lazy(() => import('./pages/History'));
+const Profile = lazy(() => import('./pages/Profile'));
+const JoinTrip = lazy(() => import('./pages/JoinTrip'));
 
 const ProtectedRoute = ({ children }) => {
   const user = useTripStore((state) => state.user);
@@ -30,20 +34,22 @@ function App() {
         {/* Responsive App Frame: Full bleed on mobile, expansive container on tablet/desktop */}
         <div className="w-full max-w-5xl xl:max-w-6xl min-h-screen flex flex-col bg-slate-50 text-slate-900 shadow-2xl sm:border-x sm:border-slate-200/80 relative">
           
-          {/* Scrollable Content Area */}
+          {/* Scrollable Content Area with Suspense Lazy Loading */}
           <main className="flex-1 w-full pb-28 sm:pb-24">
-            <Routes>
-              <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/" />} />
-              <Route path="/join/:id" element={<JoinTrip />} />
-              <Route path="/trip/:id/join" element={<JoinTrip />} />
-              
-              <Route path="/" element={<ProtectedRoute><TripsList /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/trip/:id" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/trip/:id/add-money" element={<ProtectedRoute><AddTransaction /></ProtectedRoute>} />
-              <Route path="/trip/:id/add-member" element={<ProtectedRoute><AddMember /></ProtectedRoute>} />
-              <Route path="/trip/:id/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
-            </Routes>
+            <Suspense fallback={<TripListSkeleton />}>
+              <Routes>
+                <Route path="/auth" element={!user ? <Auth /> : <Navigate to="/" />} />
+                <Route path="/join/:id" element={<JoinTrip />} />
+                <Route path="/trip/:id/join" element={<JoinTrip />} />
+                
+                <Route path="/" element={<ProtectedRoute><TripsList /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route path="/trip/:id" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/trip/:id/add-money" element={<ProtectedRoute><AddTransaction /></ProtectedRoute>} />
+                <Route path="/trip/:id/add-member" element={<ProtectedRoute><AddMember /></ProtectedRoute>} />
+                <Route path="/trip/:id/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+              </Routes>
+            </Suspense>
           </main>
 
           {/* Render Bottom Nav only inside a trip */}

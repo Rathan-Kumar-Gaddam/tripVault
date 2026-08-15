@@ -33,4 +33,8 @@ const transactionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for fast retrieval of trip transactions and user payments
+transactionSchema.index({ tripId: 1, createdAt: -1 });
+transactionSchema.index({ payer: 1 });
+
 export default mongoose.model('Transaction', transactionSchema);
