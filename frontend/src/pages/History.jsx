@@ -78,33 +78,72 @@ export default function History() {
     }
   }, [searchParams]);
 
-  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
-    return <HistorySkeleton />;
-  }
-
-  if (fetchError || !currentTrip) {
-    return (
-      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
-        <h2 className="text-xl font-bold text-slate-900 mb-2">{fetchError || 'Trip Not Found'}</h2>
-        <button
-          onClick={() => navigate('/')}
-          className="mt-4 px-6 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl"
-        >
-          ← Back to Trips
-        </button>
-      </div>
-    );
-  }
-
-  const currency = currentTrip.currency || '₹';
-  const myMembership = currentTrip.members?.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
+  const currency = currentTrip?.currency || '₹';
+  const members = currentTrip?.members || [];
+  const myMembership = members.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
   const isAdmin = myMembership?.role === 'admin';
 
-  // Memoized P2P Debt Balances
+  // Memoized P2P Debt Balances (Executed unconditionally at top level)
   const { companionDebts } = useMemo(
-    () => computeBilateralDebts(currentTrip.members, transactions, user?._id),
-    [currentTrip.members, transactions, user?._id]
+    () => computeBilateralDebts(members, transactions, user?._id),
+    [members, transactions, user?._id]
   );
+
+  // Memoized Filter & Search logic
+  const filteredTransactions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const currentUserIdStr = user?._id?.toString();
+
+    return (transactions || []).filter((tx) => {
+      const payerId = (tx.payer?._id || tx.payer || tx.createdBy?._id || tx.createdBy)?.toString();
+      const isPaidByMe = payerId === currentUserIdStr;
+      const myShare = computeUserShare(tx, user?._id, members);
+
+      let matchesType = true;
+      if (filterType === 'my_share') matchesType = tx.type === 'expense' && myShare > 0;
+      else if (filterType === 'paid_by_me') matchesType = isPaidByMe;
+      else if (filterType === 'settlement') matchesType = tx.type === 'settlement';
+
+      let matchesCategory = true;
+      if (selectedCategory !== 'All') {
+        if (selectedCategory === 'Settlement') {
+          matchesCategory = tx.type === 'settlement';
+        } else {
+          matchesCategory = tx.category === selectedCategory;
+        }
+      }
+
+      const matchesSearch = !q || 
+        tx.description?.toLowerCase().includes(q) ||
+        tx.payer?.name?.toLowerCase().includes(q) ||
+        tx.category?.toLowerCase().includes(q);
+
+      return matchesType && matchesCategory && matchesSearch;
+    });
+  }, [transactions, searchQuery, filterType, selectedCategory, user?._id, members]);
+
+  // Memoized Totals
+  const { totalSpent, totalMyConsumption, totalMyPaidUpfront } = useMemo(() => {
+    let spent = 0;
+    let myCons = 0;
+    let myPaid = 0;
+    const currentUserIdStr = user?._id?.toString();
+
+    (transactions || []).forEach((t) => {
+      if (t.type === 'expense') {
+        const amt = t.amount || 0;
+        spent += amt;
+        myCons += computeUserShare(t, user?._id, members);
+
+        const payerId = (t.payer?._id || t.payer || t.createdBy?._id || t.createdBy)?.toString();
+        if (payerId === currentUserIdStr) {
+          myPaid += amt;
+        }
+      }
+    });
+
+    return { totalSpent: spent, totalMyConsumption: myCons, totalMyPaidUpfront: myPaid };
+  }, [transactions, user?._id, members]);
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', { 
@@ -163,61 +202,24 @@ export default function History() {
     }
   };
 
-  // Memoized Filter & Search logic
-  const filteredTransactions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const currentUserIdStr = user?._id?.toString();
+  // Render Skeleton when loading
+  if ((!currentTrip || currentTrip._id !== id) && !fetchError) {
+    return <HistorySkeleton />;
+  }
 
-    return (transactions || []).filter((tx) => {
-      const payerId = (tx.payer?._id || tx.payer || tx.createdBy?._id || tx.createdBy)?.toString();
-      const isPaidByMe = payerId === currentUserIdStr;
-      const myShare = computeUserShare(tx, user?._id, currentTrip.members);
-
-      let matchesType = true;
-      if (filterType === 'my_share') matchesType = tx.type === 'expense' && myShare > 0;
-      else if (filterType === 'paid_by_me') matchesType = isPaidByMe;
-      else if (filterType === 'settlement') matchesType = tx.type === 'settlement';
-
-      let matchesCategory = true;
-      if (selectedCategory !== 'All') {
-        if (selectedCategory === 'Settlement') {
-          matchesCategory = tx.type === 'settlement';
-        } else {
-          matchesCategory = tx.category === selectedCategory;
-        }
-      }
-
-      const matchesSearch = !q || 
-        tx.description?.toLowerCase().includes(q) ||
-        tx.payer?.name?.toLowerCase().includes(q) ||
-        tx.category?.toLowerCase().includes(q);
-
-      return matchesType && matchesCategory && matchesSearch;
-    });
-  }, [transactions, searchQuery, filterType, selectedCategory, user?._id, currentTrip.members]);
-
-  // Memoized Totals
-  const { totalSpent, totalMyConsumption, totalMyPaidUpfront } = useMemo(() => {
-    let spent = 0;
-    let myCons = 0;
-    let myPaid = 0;
-    const currentUserIdStr = user?._id?.toString();
-
-    (transactions || []).forEach((t) => {
-      if (t.type === 'expense') {
-        const amt = t.amount || 0;
-        spent += amt;
-        myCons += computeUserShare(t, user?._id, currentTrip.members);
-
-        const payerId = (t.payer?._id || t.payer || t.createdBy?._id || t.createdBy)?.toString();
-        if (payerId === currentUserIdStr) {
-          myPaid += amt;
-        }
-      }
-    });
-
-    return { totalSpent: spent, totalMyConsumption: myCons, totalMyPaidUpfront: myPaid };
-  }, [transactions, user?._id, currentTrip.members]);
+  if (fetchError || !currentTrip) {
+    return (
+      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
+        <h2 className="text-xl font-bold text-slate-900 mb-2">{fetchError || 'Trip Not Found'}</h2>
+        <button
+          onClick={() => navigate('/')}
+          className="mt-4 px-6 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl"
+        >
+          ← Back to Trips
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-28 sm:pb-24">

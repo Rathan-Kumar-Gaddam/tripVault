@@ -77,7 +77,7 @@ export default function AddTransaction() {
     }
   }, [user]);
 
-  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
+  if ((!currentTrip || currentTrip._id !== id) && !fetchError) {
     return <DashboardSkeleton />;
   }
 

@@ -319,7 +319,14 @@ const useTripStore = create((set, get) => ({
   },
 
   fetchTripDetails: async (tripId) => {
-    set({ isLoading: true });
+    // Instant cache hydration: If trip is in cached trips, show it immediately (0ms delay)
+    const existing = get().trips.find((t) => t._id === tripId);
+    if (existing && (!get().currentTrip || get().currentTrip._id !== tripId)) {
+      set({ currentTrip: existing, isLoading: true });
+    } else {
+      set({ isLoading: true });
+    }
+
     try {
       const [tripRes, txRes, reqRes] = await Promise.all([
         api.get(`/trips/${tripId}`),

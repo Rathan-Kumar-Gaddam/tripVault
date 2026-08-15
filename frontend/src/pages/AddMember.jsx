@@ -96,7 +96,7 @@ export default function AddMember() {
     }
   };
 
-  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
+  if ((!currentTrip || currentTrip._id !== id) && !fetchError) {
     return <DashboardSkeleton />;
   }
 

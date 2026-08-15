@@ -129,49 +129,12 @@ export default function Dashboard() {
     }
   };
 
-  if ((isLoading && !currentTrip) || (currentTrip && currentTrip._id !== id && !fetchError)) {
-    return <DashboardSkeleton />;
-  }
-
-  if (fetchError || !currentTrip) {
-    return (
-      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
-        <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
-          <AlertCircle size={32} />
-        </div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2 font-heading">
-          {fetchError || 'Trip Vault Not Found'}
-        </h2>
-        <p className="text-xs sm:text-sm text-slate-500 max-w-sm mb-6">
-          This trip vault might have been removed, or your account may need to be added as a companion to access it.
-        </p>
-        <div className="flex flex-wrap gap-3 justify-center">
-          <button
-            onClick={() => navigate('/')}
-            className="px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg active:scale-95 transition-all"
-          >
-            ← Back to All Trips
-          </button>
-          <button
-            onClick={() => {
-              setFetchError(null);
-              fetchTripDetails(id).catch(err => setFetchError(err.response?.data?.message || 'Failed to load trip'));
-            }}
-            className="px-6 py-3.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm rounded-2xl active:scale-95 transition-all shadow-sm"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const currency = currentTrip.currency || '₹';
-  const members = currentTrip.members || [];
+  const members = currentTrip?.members || [];
   const myData = members.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
   const isAdmin = myData?.role === 'admin';
+  const currency = currentTrip?.currency || '₹';
 
-  // Memoized P2P bilateral debt computation (prevents heavy matrix allocation on every render)
+  // Memoized P2P bilateral debt computation (executed unconditionally)
   const { 
     totalYouAreOwed, 
     totalYouOwe, 
@@ -235,7 +198,7 @@ export default function Dashboard() {
     });
 
     const sortedCats = Object.values(catStats).sort((a, b) => b.total - a.total);
-    const tripBudget = currentTrip.budget || 0;
+    const tripBudget = currentTrip?.budget || 0;
     const rem = tripBudget > 0 ? tripBudget - spend : null;
     const rawPct = tripBudget > 0 ? (spend / tripBudget) * 100 : 0;
     const pct = Math.min(100, Math.round(rawPct));
@@ -251,7 +214,7 @@ export default function Dashboard() {
       budgetPercentage: pct,
       isOverBudget: over,
     };
-  }, [transactions, currentTrip.budget, user?._id, members, id]);
+  }, [transactions, currentTrip?.budget, user?._id, members, id]);
 
   const totalTransactionsCount = transactions?.length || 0;
 
@@ -262,6 +225,44 @@ export default function Dashboard() {
       day: 'numeric' 
     });
   };
+
+  // Render skeleton loader while trip details are loading
+  if ((!currentTrip || currentTrip._id !== id) && !fetchError) {
+    return <DashboardSkeleton />;
+  }
+
+  if (fetchError || !currentTrip) {
+    return (
+      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2 font-heading">
+          {fetchError || 'Trip Vault Not Found'}
+        </h2>
+        <p className="text-xs sm:text-sm text-slate-500 max-w-sm mb-6">
+          This trip vault might have been removed, or your account may need to be added as a companion to access it.
+        </p>
+        <div className="flex flex-wrap gap-3 justify-center">
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg active:scale-95 transition-all"
+          >
+            ← Back to All Trips
+          </button>
+          <button
+            onClick={() => {
+              setFetchError(null);
+              fetchTripDetails(id).catch(err => setFetchError(err.response?.data?.message || 'Failed to load trip'));
+            }}
+            className="px-6 py-3.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm rounded-2xl active:scale-95 transition-all shadow-sm"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Open Quick Settle Modal
   const handleOpenSettleModal = (companion) => {
