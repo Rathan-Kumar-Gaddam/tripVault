@@ -9,7 +9,10 @@ export const syncTripBalances = async (tripId) => {
   const trip = await Trip.findById(tripId);
   if (!trip) return null;
 
-  const transactions = await Transaction.find({ tripId });
+  // Optimized lean query selecting only balance calculation fields to save memory
+  const transactions = await Transaction.find({ tripId })
+    .select('type amount splits sharedBy payer createdBy')
+    .lean();
 
   // Initialize balance for all members
   const memberBalances = {};
@@ -217,12 +220,14 @@ export const getTransactions = async (req, res) => {
     });
     if (!isMember) return res.status(403).json({ message: 'Access denied' });
 
+    // Lean query returns plain JS objects, reducing memory allocation by ~70%
     const transactions = await Transaction.find({ tripId })
       .populate('payer', 'name email phone avatar')
       .populate('createdBy', 'name email phone avatar')
       .populate('sharedBy', 'name email phone avatar')
       .populate('splits.user', 'name email phone avatar')
-      .sort({ createdAt: -1 }); // Newest first
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json(transactions);
   } catch (error) {

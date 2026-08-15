@@ -5,34 +5,20 @@ import {
   ArrowLeft, 
   Check, 
   Circle, 
-  Utensils, 
-  Car, 
-  Hotel, 
-  Ticket, 
-  ShoppingBag, 
-  Coffee, 
   Sparkles,
-  Users,
-  Calculator,
-  UserCheck,
-  DollarSign,
-  ArrowRight,
-  HandCoins,
-  ReceiptText,
-  HelpCircle,
-  Send
+  Users, 
+  Calculator, 
+  UserCheck, 
+  DollarSign, 
+  ArrowRight, 
+  HandCoins, 
+  ReceiptText, 
+  HelpCircle, 
+  Send 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
-
-const CATEGORIES = [
-  { id: 'Food & Dining', label: 'Food & Dining', icon: Utensils, emoji: '🍽️' },
-  { id: 'Transport & Fuel', label: 'Transport & Fuel', icon: Car, emoji: '🚕' },
-  { id: 'Stay & Hotels', label: 'Stay & Hotels', icon: Hotel, emoji: '🏨' },
-  { id: 'Activities & Fun', label: 'Activities & Fun', icon: Ticket, emoji: '🎟️' },
-  { id: 'Shopping', label: 'Shopping', icon: ShoppingBag, emoji: '🛍️' },
-  { id: 'Snacks & Drinks', label: 'Snacks & Drinks', icon: Coffee, emoji: '☕' },
-];
+import CategoryPicker from '../components/CategoryPicker';
 
 const QUICK_AMOUNTS = [100, 500, 1000, 2000];
 
@@ -458,32 +444,14 @@ export default function AddTransaction() {
                 </div>
               </div>
 
-              {/* Categories Grid */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">
-                  Category
-                </label>
-                <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 gap-2">
-                  {CATEGORIES.map((cat) => {
-                    const isSelected = category === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => { setCategory(cat.id); if (!description) setDescription(cat.label); }}
-                        className={`p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1 transition-all active:scale-95 ${
-                          isSelected 
-                            ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm ring-2 ring-indigo-500/20' 
-                            : 'bg-white border-slate-200/80 text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="text-lg">{cat.emoji}</span>
-                        <span className="text-[11px] truncate w-full text-center">{cat.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Custom-Themed Categories & Custom Category Creator */}
+              <CategoryPicker
+                selectedCategory={category}
+                onSelectCategory={setCategory}
+                tripId={id}
+                onAutoFillDescription={(note) => { if (!description) setDescription(note); }}
+                currentDescription={description}
+              />
 
               {/* Description Input */}
               <div>
@@ -788,32 +756,14 @@ export default function AddTransaction() {
               </div>
             </div>
 
-            {/* Category Selector */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">
-                Category
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {CATEGORIES.map((cat) => {
-                  const isSelected = category === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => { setCategory(cat.id); if (!description) setDescription(cat.label); }}
-                      className={`p-2.5 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1 transition-all active:scale-95 ${
-                        isSelected 
-                          ? 'bg-amber-50 border-amber-200 text-amber-800 shadow-sm ring-2 ring-amber-500/20' 
-                          : 'bg-white border-slate-200/80 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="text-base">{cat.emoji}</span>
-                      <span className="text-[10px] truncate w-full text-center">{cat.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Custom-Themed Category Selector */}
+            <CategoryPicker
+              selectedCategory={category}
+              onSelectCategory={setCategory}
+              tripId={id}
+              onAutoFillDescription={(note) => { if (!description) setDescription(note); }}
+              currentDescription={description}
+            />
 
             {/* Note / Description Input */}
             <div>

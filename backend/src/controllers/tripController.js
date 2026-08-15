@@ -85,7 +85,9 @@ export const addMember = async (req, res) => {
 // @route   GET /api/trips/:tripId/preview
 export const getTripPreview = async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.tripId).populate('members.user', 'name avatar');
+    const trip = await Trip.findById(req.params.tripId)
+      .populate('members.user', 'name avatar')
+      .lean();
     if (!trip) return res.status(404).json({ message: 'Trip vault not found.' });
 
     const admin = trip.members.find(m => m.role === 'admin');
@@ -117,7 +119,9 @@ export const joinTrip = async (req, res) => {
     // Check if user is already a member
     const alreadyInTrip = trip.members.some((m) => m.user.toString() === userId.toString());
     if (alreadyInTrip) {
-      const populated = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+      const populated = await Trip.findById(tripId)
+        .populate('members.user', 'name email phone avatar')
+        .lean();
       return res.status(200).json({ message: 'Already a member of this trip.', trip: populated });
     }
 
@@ -125,7 +129,9 @@ export const joinTrip = async (req, res) => {
     trip.members.push({ user: userId, role: 'member', balance: 0 });
     await trip.save();
 
-    const populated = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+    const populated = await Trip.findById(tripId)
+      .populate('members.user', 'name email phone avatar')
+      .lean();
     res.status(200).json({ message: `Successfully joined ${trip.name}!`, trip: populated });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to join trip' });
@@ -136,7 +142,9 @@ export const joinTrip = async (req, res) => {
 // @route   GET /api/trips/:tripId
 export const getTripById = async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.tripId).populate('members.user', 'name email phone avatar');
+    const trip = await Trip.findById(req.params.tripId)
+      .populate('members.user', 'name email phone avatar')
+      .lean();
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     // Ensure the requester is part of the trip
@@ -157,7 +165,10 @@ export const getTripById = async (req, res) => {
 // @route   GET /api/trips
 export const getUserTrips = async (req, res) => {
   try {
-    const trips = await Trip.find({ 'members.user': req.user._id }).populate('members.user', 'name email phone avatar');
+    const trips = await Trip.find({ 'members.user': req.user._id })
+      .populate('members.user', 'name email phone avatar')
+      .sort({ updatedAt: -1 })
+      .lean();
     res.json(trips);
   } catch (error) {
     res.status(500).json({ message: error.message });

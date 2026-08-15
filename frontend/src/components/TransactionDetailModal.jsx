@@ -15,17 +15,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const CATEGORY_EMOJIS = {
-  'Food & Dining': '🍽️',
-  'Transport & Fuel': '🚕',
-  'Stay & Hotels': '🏨',
-  'Activities & Fun': '🎟️',
-  'Shopping': '🛍️',
-  'Snacks & Drinks': '☕',
-  'Settlement': '🤝',
-  'Loan / Cash': '💵',
-  'Other': '🏷️',
-};
+import { getCategoryMeta } from '../utils/categoryUtils';
 
 export default function TransactionDetailModal({ 
   transaction, 
@@ -42,7 +32,8 @@ export default function TransactionDetailModal({
   if (!isOpen || !transaction) return null;
 
   const isSettlement = transaction.type === 'settlement';
-  const emoji = CATEGORY_EMOJIS[transaction.category] || (isSettlement ? '🤝' : '🏷️');
+  const meta = getCategoryMeta(transaction.category || (isSettlement ? 'Settlement' : 'Other'));
+  const emoji = meta.emoji;
   const payerName = transaction.payer?.name || 'Unknown';
   const isPayerMe = (transaction.payer?._id || transaction.payer) === currentUser?._id;
   const canDelete = isAdmin || (transaction.createdBy?._id || transaction.createdBy) === currentUser?._id;
@@ -80,8 +71,8 @@ export default function TransactionDetailModal({
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
             <span className="text-2xl">{emoji}</span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-              isSettlement ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
+              isSettlement ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : (meta.theme?.badge || 'bg-indigo-100 text-indigo-800 border-indigo-200')
             }`}>
               {isSettlement ? 'Settlement' : (transaction.category || 'Expense')}
             </span>

@@ -97,7 +97,8 @@ export const getTripRequests = async (req, res) => {
     const requests = await FundRequest.find({ tripId })
       .populate('requester', 'name email phone avatar')
       .populate('targetUser', 'name email phone avatar')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json(requests);
   } catch (error) {

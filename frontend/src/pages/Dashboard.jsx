@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useTripStore, { computeBilateralDebts } from '../store/useTripStore';
 import { 
@@ -46,26 +46,7 @@ import {
 import { DashboardSkeleton } from '../components/SkeletonLoader';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 import ShareTripModal from '../components/ShareTripModal';
-
-const CATEGORY_COLORS = {
-  'Food & Dining': '#f59e0b',
-  'Transport & Fuel': '#3b82f6',
-  'Stay & Hotels': '#8b5cf6',
-  'Activities & Fun': '#ec4899',
-  'Shopping': '#10b981',
-  'Snacks & Drinks': '#6366f1',
-  'Other': '#64748b',
-};
-
-const CATEGORY_EMOJIS = {
-  'Food & Dining': '🍽️',
-  'Transport & Fuel': '🚕',
-  'Stay & Hotels': '🏨',
-  'Activities & Fun': '🎟️',
-  'Shopping': '🛍️',
-  'Snacks & Drinks': '☕',
-  'Other': '🏷️',
-};
+import { getCategoryMeta } from '../utils/categoryUtils';
 
 const PRESET_BUDGETS = [10000, 25000, 50000, 100000];
 
@@ -190,34 +171,89 @@ export default function Dashboard() {
   const myData = members.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
   const isAdmin = myData?.role === 'admin';
 
-  // Compute exact P2P bilateral balances
+  // Memoized P2P bilateral debt computation (prevents heavy matrix allocation on every render)
   const { 
     totalYouAreOwed, 
     totalYouOwe, 
     netPosition, 
     companionDebts 
-  } = computeBilateralDebts(members, transactions, user?._id);
-
-  // Incoming and Outgoing Fund Requests
-  const incomingRequests = (fundRequests || []).filter(
-    (r) => (r.targetUser?._id || r.targetUser) === user?._id && r.status === 'pending'
+  } = useMemo(
+    () => computeBilateralDebts(members, transactions, user?._id),
+    [members, transactions, user?._id]
   );
 
-  const outgoingRequests = (fundRequests || []).filter(
-    (r) => (r.requester?._id || r.requester) === user?._id && r.status === 'pending'
+  // Memoized Incoming and Outgoing Fund Requests
+  const incomingRequests = useMemo(
+    () => (fundRequests || []).filter(
+      (r) => (r.targetUser?._id || r.targetUser) === user?._id && r.status === 'pending'
+    ),
+    [fundRequests, user?._id]
   );
 
-  // Group trip stats
-  const totalTripSpend = transactions
-    ?.filter(t => t.type === 'expense')
-    ?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+  const outgoingRequests = useMemo(
+    () => (fundRequests || []).filter(
+      (r) => (r.requester?._id || r.requester) === user?._id && r.status === 'pending'
+    ),
+    [fundRequests, user?._id]
+  );
 
-  const myTotalShare = transactions
-    ?.filter(t => t.type === 'expense')
-    ?.reduce((sum, t) => sum + computeUserShare(t, user?._id, members), 0) || 0;
+  // Memoized Group & Category Calculations
+  const {
+    totalTripSpend,
+    myTotalShare,
+    recentTransactions,
+    sortedCategories,
+    budget,
+    budgetRemaining,
+    budgetPercentage,
+    isOverBudget,
+  } = useMemo(() => {
+    let spend = 0;
+    let myShare = 0;
+    const catStats = {};
+
+    (transactions || []).forEach((t) => {
+      if (t.type === 'expense') {
+        const amt = t.amount || 0;
+        spend += amt;
+        myShare += computeUserShare(t, user?._id, members);
+
+        const cat = t.category || 'Other';
+        const meta = getCategoryMeta(cat, id);
+        if (!catStats[cat]) {
+          catStats[cat] = {
+            name: cat,
+            total: 0,
+            count: 0,
+            color: meta.hex || meta.theme?.hex || '#6366f1',
+            emoji: meta.emoji || '🏷️',
+          };
+        }
+        catStats[cat].total += amt;
+        catStats[cat].count += 1;
+      }
+    });
+
+    const sortedCats = Object.values(catStats).sort((a, b) => b.total - a.total);
+    const tripBudget = currentTrip.budget || 0;
+    const rem = tripBudget > 0 ? tripBudget - spend : null;
+    const rawPct = tripBudget > 0 ? (spend / tripBudget) * 100 : 0;
+    const pct = Math.min(100, Math.round(rawPct));
+    const over = tripBudget > 0 && spend > tripBudget;
+
+    return {
+      totalTripSpend: spend,
+      myTotalShare: myShare,
+      recentTransactions: (transactions || []).slice(0, 6),
+      sortedCategories: sortedCats,
+      budget: tripBudget,
+      budgetRemaining: rem,
+      budgetPercentage: pct,
+      isOverBudget: over,
+    };
+  }, [transactions, currentTrip.budget, user?._id, members, id]);
 
   const totalTransactionsCount = transactions?.length || 0;
-  const recentTransactions = (transactions || []).slice(0, 6);
 
   const formatDate = (dateString) => {
     if (!dateString) return 'Recent';
@@ -226,34 +262,6 @@ export default function Dashboard() {
       day: 'numeric' 
     });
   };
-
-  // Budget calculations
-  const budget = currentTrip.budget || 0;
-  const budgetRemaining = budget > 0 ? (budget - totalTripSpend) : null;
-  const rawBudgetPercent = budget > 0 ? (totalTripSpend / budget) * 100 : 0;
-  const budgetPercentage = Math.min(100, Math.round(rawBudgetPercent));
-  const isOverBudget = budget > 0 && totalTripSpend > budget;
-
-  // Category breakdown calculations
-  const categoryStats = {};
-  transactions
-    .filter((t) => t.type === 'expense')
-    .forEach((t) => {
-      const cat = t.category || 'Other';
-      if (!categoryStats[cat]) {
-        categoryStats[cat] = {
-          name: cat,
-          total: 0,
-          count: 0,
-          color: CATEGORY_COLORS[cat] || '#6366f1',
-          emoji: CATEGORY_EMOJIS[cat] || '🏷️',
-        };
-      }
-      categoryStats[cat].total += t.amount || 0;
-      categoryStats[cat].count += 1;
-    });
-
-  const sortedCategories = Object.values(categoryStats).sort((a, b) => b.total - a.total);
 
   // Open Quick Settle Modal
   const handleOpenSettleModal = (companion) => {
@@ -274,19 +282,33 @@ export default function Dashboard() {
 
     const targetUserId = settleTarget.user?._id || settleTarget.user;
     const targetName = settleTarget.user?.name || 'Companion';
+    const isYouOwe = settleTarget.status === 'you_owe';
 
     try {
       setIsSettling(true);
-      await createFundRequest({
-        tripId: id,
-        requestType: 'settlement',
-        targetUser: targetUserId,
-        amount: numAmount,
-        description: `Settlement payment to ${targetName}`,
-        category: 'Settlement',
-      });
-
-      toast.success(`Settlement payment sent to ${targetName} for approval! 📩`);
+      if (isYouOwe) {
+        // You owe them, so you are sending a settlement payment
+        await createFundRequest({
+          tripId: id,
+          requestType: 'settlement',
+          targetUser: targetUserId,
+          amount: numAmount,
+          description: `Settlement payment to ${targetName}`,
+          category: 'Settlement',
+        });
+        toast.success(`Settlement payment sent to ${targetName} for approval! 📩`);
+      } else {
+        // They owe you, so you are requesting them to settle
+        await createFundRequest({
+          tripId: id,
+          requestType: 'fund_request',
+          targetUser: targetUserId,
+          amount: numAmount,
+          description: `Settlement request (${currency}${numAmount.toFixed(2)})`,
+          category: 'Settlement',
+        });
+        toast.success(`Settlement request sent to ${targetName}! 📩`);
+      }
       setSettleTarget(null);
     } catch (err) {
       toast.error(err.response?.data?.message || err.message || 'Failed to submit settlement.');
@@ -893,19 +915,19 @@ export default function Dashboard() {
         )}
 
         {/* Right: Personal Passbook (Direct Debts) */}
-        <section className="bg-white p-5 sm:p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        <section className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-3.5">
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
-                  <HandCoins size={16} className="text-indigo-600" />
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
+                  <HandCoins size={16} className="text-indigo-600 shrink-0" />
                   <span>Personal Passbook</span>
                 </h3>
-                <p className="text-[11px] font-medium text-slate-400">Direct balances between you and companions</p>
+                <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">Direct balances between you and companions</p>
               </div>
               <button 
                 onClick={() => setShowAskModal(true)}
-                className="text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-100/80 border border-amber-300/80 px-3 py-1 rounded-xl flex items-center gap-1 shadow-sm active:scale-95 transition-all"
+                className="text-[11px] sm:text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-100/80 hover:bg-amber-100 border border-amber-300/80 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl flex items-center gap-1 shadow-xs active:scale-95 transition-all shrink-0"
               >
                 <HelpCircle size={13} />
                 <span>Ask Funds</span>
@@ -917,7 +939,7 @@ export default function Dashboard() {
                 <p className="text-xs font-semibold text-slate-400">No companions added to this trip yet.</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2.5 sm:gap-3">
                 {companionDebts.map((debt) => {
                   const compUser = debt.user;
                   const isYouOwe = debt.status === 'you_owe';
@@ -927,67 +949,85 @@ export default function Dashboard() {
                   return (
                     <div 
                       key={compUser?._id || compUser} 
-                      className={`bg-slate-50/70 p-3.5 rounded-2xl flex items-center justify-between gap-3 border transition-all ${
+                      className={`p-3 sm:p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border transition-all ${
                         isYouOwe 
-                          ? 'border-rose-200/80 bg-rose-50/30 hover:border-rose-300' 
+                          ? 'border-rose-200/80 bg-rose-50/40 hover:border-rose-300' 
                           : isOwesYou 
-                            ? 'border-emerald-200/80 bg-emerald-50/30 hover:border-emerald-300' 
-                            : 'border-slate-200/80 hover:border-slate-300'
+                            ? 'border-emerald-200/80 bg-emerald-50/40 hover:border-emerald-300' 
+                            : 'border-slate-200/80 bg-slate-50/70 hover:border-slate-300'
                       }`}
                     >
-                      {/* Avatar & Name */}
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white border-2 border-white shadow-sm flex items-center justify-center text-xs font-bold overflow-hidden shrink-0">
-                          {compUser?.avatar ? (
-                            <img src={compUser.avatar} alt={compUser.name} className="w-full h-full object-cover" />
-                          ) : (
-                            compUser?.name ? compUser.name.charAt(0).toUpperCase() : <User size={16} />
-                          )}
+                      {/* Avatar, Name & Live Debt Status */}
+                      <div className="flex items-center justify-between sm:justify-start gap-2.5 sm:gap-3 min-w-0">
+                        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white border-2 border-white shadow-xs flex items-center justify-center text-xs font-bold overflow-hidden shrink-0">
+                            {compUser?.avatar ? (
+                              <img src={compUser.avatar} alt={compUser.name} className="w-full h-full object-cover" />
+                            ) : (
+                              compUser?.name ? compUser.name.charAt(0).toUpperCase() : <User size={15} />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate max-w-[140px] sm:max-w-[180px]">
+                              {compUser?.name}
+                            </p>
+                            
+                            {/* Subtitle / Debt status */}
+                            {isOwesYou && (
+                              <p className="text-[11px] sm:text-xs font-extrabold text-emerald-600 flex items-center gap-1">
+                                <span>Owes you</span>
+                                <strong className="text-emerald-700 font-black">{currency}{debt.amount.toFixed(2)}</strong>
+                              </p>
+                            )}
+
+                            {isYouOwe && (
+                              <p className="text-[11px] sm:text-xs font-extrabold text-rose-600 flex items-center gap-1">
+                                <span>You owe</span>
+                                <strong className="text-rose-700 font-black">{currency}{debt.amount.toFixed(2)}</strong>
+                              </p>
+                            )}
+
+                            {isSettled && (
+                              <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                                <CheckCircle2 size={11} className="text-emerald-500" />
+                                <span>Settled up</span>
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">{compUser?.name}</p>
-                          
-                          {/* Dynamic Debt Text */}
+
+                        {/* Mobile-only compact balance indicator */}
+                        <div className="sm:hidden text-right shrink-0">
                           {isOwesYou && (
-                            <p className="text-xs font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
-                              <span>Owes you</span>
-                              <strong className="text-emerald-700 font-black">{currency}{debt.amount.toFixed(2)}</strong>
-                            </p>
+                            <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-lg">
+                              +{currency}{debt.amount.toFixed(2)}
+                            </span>
                           )}
-
                           {isYouOwe && (
-                            <p className="text-xs font-extrabold text-rose-600 flex items-center gap-1 mt-0.5">
-                              <span>You owe</span>
-                              <strong className="text-rose-700 font-black">{currency}{debt.amount.toFixed(2)}</strong>
-                            </p>
-                          )}
-
-                          {isSettled && (
-                            <p className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mt-0.5">
-                              <CheckCircle2 size={12} className="text-emerald-500" />
-                              <span>All settled up</span>
-                            </p>
+                            <span className="text-[11px] font-black text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded-lg">
+                              -{currency}{debt.amount.toFixed(2)}
+                            </span>
                           )}
                         </div>
                       </div>
 
-                      {/* Actions / Settle Up & Ask Button */}
-                      <div className="shrink-0 flex items-center gap-1.5">
+                      {/* Actions Buttons Row: Full-width on mobile, compact on desktop */}
+                      <div className="flex items-center gap-1.5 shrink-0 pt-1.5 sm:pt-0 border-t border-slate-200/40 sm:border-t-0">
                         <button
                           onClick={() => { setAskTargetUser((compUser?._id || compUser)?.toString()); setShowAskModal(true); }}
-                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold active:scale-95 transition-all flex items-center gap-1"
+                          className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-[11px] sm:text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1"
                           title={`Ask ${compUser?.name} for funds`}
                         >
                           <HelpCircle size={12} />
-                          <span>Ask ₹</span>
+                          <span>Ask {currency}</span>
                         </button>
 
                         {isYouOwe && (
                           <button
                             onClick={() => handleOpenSettleModal(debt)}
-                            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs shadow-md shadow-rose-600/20 active:scale-95 transition-all flex items-center gap-1"
+                            className="flex-1 sm:flex-initial px-3 py-1.5 sm:py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-[11px] sm:text-xs shadow-sm shadow-rose-600/20 active:scale-95 transition-all flex items-center justify-center gap-1"
                           >
-                            <span>Settle</span>
+                            <span>Settle Up</span>
                             <ArrowRight size={12} />
                           </button>
                         )}
@@ -995,9 +1035,10 @@ export default function Dashboard() {
                         {isOwesYou && (
                           <button
                             onClick={() => handleOpenSettleModal(debt)}
-                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl font-bold text-xs active:scale-95 transition-all"
+                            className="flex-1 sm:flex-initial px-3 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[11px] sm:text-xs shadow-sm shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-1"
                           >
-                            Record Paid
+                            <Send size={12} />
+                            <span>Request Settle</span>
                           </button>
                         )}
                       </div>
@@ -1051,8 +1092,9 @@ export default function Dashboard() {
                   const payerName = isPayer ? 'You' : (tx.payer?.name || tx.paidBy?.name || tx.createdBy?.name || 'Someone');
                   const mySplit = tx.splits?.find(s => (s.user?._id || s.user)?.toString() === user?._id?.toString());
                   const myShare = mySplit ? (mySplit.amount || 0) : computeUserShare(tx, user?._id, members);
-                  const catColor = CATEGORY_COLORS[tx.category] || CATEGORY_COLORS['Other'] || '#6366f1';
-                  const catEmoji = CATEGORY_EMOJIS[tx.category] || CATEGORY_EMOJIS['Other'] || '🏷️';
+                  const catMeta = getCategoryMeta(tx.category || (isSettlement ? 'Settlement' : 'Other'), id);
+                  const catColor = catMeta.hex || catMeta.theme?.hex || '#6366f1';
+                  const catEmoji = catMeta.emoji || '🏷️';
 
                   return (
                     <div
@@ -1064,7 +1106,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-3 min-w-0">
                         <div 
                           className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 shadow-sm transition-transform group-hover:scale-105"
-                          style={{ backgroundColor: `${catColor}18` }}
+                          style={{ backgroundColor: `${catColor}20` }}
                         >
                           <span>{catEmoji}</span>
                         </div>
@@ -1106,16 +1148,16 @@ export default function Dashboard() {
         </section>
 
         {/* Right: Group Standings Ledger */}
-        <section className="bg-white p-5 sm:p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        <section className="bg-white p-4 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-extrabold text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-2">
-                <Users size={16} className="text-indigo-600" />
+              <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-2">
+                <Users size={16} className="text-indigo-600 shrink-0" />
                 <span>Group Standings ({members.length})</span>
               </h3>
               <button 
                 onClick={() => navigate(`/trip/${id}/add-member`)}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1 rounded-xl active:scale-95 transition-all"
+                className="text-[11px] sm:text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2.5 sm:px-3 py-1 rounded-xl active:scale-95 transition-all shrink-0"
               >
                 Manage Companions
               </button>
@@ -1221,69 +1263,96 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* ===================== QUICK SETTLE-UP MODAL ===================== */}
-      {settleTarget && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
-            <div className="flex justify-between items-center mb-4">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
-                <HandCoins size={24} />
-              </div>
-              <button 
-                onClick={() => setSettleTarget(null)}
-                disabled={isSettling}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-full"
-              >
-                <X size={20} />
-              </button>
-            </div>
+      {/* ===================== QUICK SETTLE / REQUEST SETTLE MODAL ===================== */}
+      {settleTarget && (() => {
+        const isYouOwe = settleTarget.status === 'you_owe';
+        const targetName = settleTarget.user?.name || 'Companion';
+        const targetUserId = (settleTarget.user?._id || settleTarget.user)?.toString();
 
-            <h3 className="text-lg font-bold text-slate-900 mb-1 font-heading">
-              {settleTarget.status === 'you_owe' ? `Pay ${settleTarget.user?.name}` : `Settle with ${settleTarget.user?.name}`}
-            </h3>
-            
-            <p className="text-xs text-slate-500 mb-4">
-              Send settlement payment to <strong>{settleTarget.user?.name}</strong>. They will receive an approval request to confirm receipt before trip balances update.
-            </p>
-
-            <form onSubmit={handleConfirmSettle} className="flex flex-col gap-4">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex items-center justify-center">
-                <span className="text-2xl font-bold text-slate-400 mr-2 font-heading">{currency}</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={settleAmount}
-                  onChange={(e) => setSettleAmount(e.target.value)}
-                  placeholder="0.00"
-                  required
-                  disabled={isSettling}
-                  className="text-3xl font-black text-slate-900 text-center outline-none w-36 bg-transparent tracking-tight font-heading"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
+        return (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
+            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+              <div className="flex justify-between items-center mb-4">
+                <div className={`p-3 rounded-2xl ${isYouOwe ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {isYouOwe ? <HandCoins size={24} /> : <Send size={24} />}
+                </div>
+                <button 
                   onClick={() => setSettleTarget(null)}
                   disabled={isSettling}
-                  className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-full"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSettling || !Number(settleAmount) || Number(settleAmount) <= 0}
-                  className="flex-1 py-3.5 bg-emerald-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-emerald-600/25 hover:bg-emerald-700 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-                >
-                  <HandCoins size={15} />
-                  <span>{isSettling ? 'Sending...' : 'Send for Approval'}</span>
+                  <X size={20} />
                 </button>
               </div>
-            </form>
+
+              <h3 className="text-lg font-bold text-slate-900 mb-1 font-heading">
+                {isYouOwe ? `Pay & Settle with ${targetName}` : `Request Settlement from ${targetName}`}
+              </h3>
+              
+              <p className="text-xs text-slate-500 mb-4">
+                {isYouOwe ? (
+                  <>Send settlement payment to <strong>{targetName}</strong>. Once they approve receipt, your debt will be cleared.</>
+                ) : (
+                  <><strong>{targetName}</strong> owes you <strong>{currency}{settleTarget.amount?.toFixed(2)}</strong>. Send a settlement request asking them to pay you back and settle up.</>
+                )}
+              </p>
+
+              <form onSubmit={handleConfirmSettle} className="flex flex-col gap-4">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex items-center justify-center">
+                  <span className="text-2xl font-bold text-slate-400 mr-2 font-heading">{currency}</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={settleAmount}
+                    onChange={(e) => setSettleAmount(e.target.value)}
+                    placeholder="0.00"
+                    required
+                    disabled={isSettling}
+                    className="text-3xl font-black text-slate-900 text-center outline-none w-36 bg-transparent tracking-tight font-heading"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettleTarget(null)}
+                    disabled={isSettling}
+                    className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSettling || !Number(settleAmount) || Number(settleAmount) <= 0}
+                    className={`flex-1 py-3.5 text-white font-bold rounded-2xl text-xs shadow-lg active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5 ${
+                      isYouOwe 
+                        ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25' 
+                        : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25'
+                    }`}
+                  >
+                    {isYouOwe ? <HandCoins size={15} /> : <Send size={15} />}
+                    <span>{isSettling ? 'Sending...' : isYouOwe ? 'Send Payment' : 'Send Request'}</span>
+                  </button>
+                </div>
+
+                {!isYouOwe && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettleTarget(null);
+                      navigate(`/trip/${id}/add-money?mode=settle&with=${targetUserId}&amount=${settleAmount}`);
+                    }}
+                    className="text-[11px] font-bold text-slate-400 hover:text-indigo-600 text-center transition-colors pt-1"
+                  >
+                    Already received cash/UPI? Record directly →
+                  </button>
+                )}
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ===================== ASK COMPANION FOR FUNDS MODAL ===================== */}
       {showAskModal && (

@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import connectDB from './config/db.js';
 
 import path from 'path';
@@ -24,9 +25,10 @@ connectDB();
 
 const app = express();
 
-// Middleware
+// Performance & Memory Middleware
 app.use(helmet());
 app.use(cors());
+app.use(compression()); // Gzip/Brotli response compression to minimize memory & payload footprint
 app.use(express.json({ limit: '10mb' })); // Parses incoming JSON requests with photo support
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

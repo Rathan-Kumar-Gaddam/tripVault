@@ -266,6 +266,11 @@ const useTripStore = create((set, get) => ({
     set({ user: null, trips: [], currentTrip: null, transactions: [], fundRequests: [], error: null });
   },
 
+  // Releases active trip & transaction memory when navigating back to trip list
+  clearTripData: () => {
+    set({ currentTrip: null, transactions: [], fundRequests: [] });
+  },
+
   // Trips & Balances (Stale-While-Revalidate: Instant render with cache, silent background sync)
   fetchTrips: async () => {
     // Only set loading to true if there is no cached data to show immediately
