@@ -11,7 +11,8 @@ import {
   Users, 
   AlertTriangle,
   X,
-  HandCoins
+  HandCoins,
+  LogOut
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
@@ -19,7 +20,7 @@ import { DashboardSkeleton } from '../components/SkeletonLoader';
 export default function AddMember() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, currentTrip, transactions, fetchTripDetails, addMember, removeMember, isLoading } = useTripStore();
+  const { user, currentTrip, transactions, fetchTripDetails, addMember, removeMember, leaveTrip, isLoading } = useTripStore();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -28,6 +29,10 @@ export default function AddMember() {
   // Member removal modal state
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [isRemoving, setIsRemoving] = useState(false);
+
+  // Leave Trip modal state
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
 
   const [fetchError, setFetchError] = useState(null);
 
@@ -93,6 +98,21 @@ export default function AddMember() {
       toast.error(err.response?.data?.message || 'Failed to remove member.');
     } finally {
       setIsRemoving(false);
+    }
+  };
+
+  const handleConfirmLeave = async () => {
+    if (isLeaving) return;
+
+    try {
+      setIsLeaving(true);
+      await leaveTrip(id);
+      toast.success('Successfully left the trip vault 🚪');
+      navigate('/');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to leave trip.');
+    } finally {
+      setIsLeaving(false);
     }
   };
 
@@ -291,6 +311,17 @@ export default function AddMember() {
                       <Trash2 size={16} />
                     </button>
                   )}
+
+                  {/* Leave Trip Button (for self) */}
+                  {isSelf && (
+                    <button
+                      onClick={() => setShowLeaveConfirm(true)}
+                      title="Leave Trip Vault"
+                      className="p-2.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-2xl border border-transparent hover:border-amber-100 transition-all active:scale-95"
+                    >
+                      <LogOut size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -299,7 +330,7 @@ export default function AddMember() {
       </section>
     </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete / Remove Companion Confirmation Modal */}
       {memberToRemove && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border border-gray-100">
@@ -343,6 +374,50 @@ export default function AddMember() {
                 className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl text-sm shadow-md shadow-rose-600/20 hover:bg-rose-700 active:scale-95 transition-all disabled:opacity-50"
               >
                 {isRemoving ? 'Removing...' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave Trip Confirmation Modal */}
+      {showLeaveConfirm && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl">
+                <LogOut size={24} />
+              </div>
+              <button 
+                onClick={() => setShowLeaveConfirm(false)}
+                disabled={isLeaving}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <h3 className="text-lg font-bold text-gray-900 mb-1 font-heading">Leave Trip Vault?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Are you sure you want to leave <strong>{currentTrip?.name}</strong>? You will no longer see this trip on your dashboard.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLeaveConfirm(false)}
+                disabled={isLeaving}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-200 active:scale-95 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLeave}
+                disabled={isLeaving}
+                className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-xl text-sm shadow-md shadow-amber-600/20 hover:bg-amber-700 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isLeaving ? 'Leaving...' : 'Leave Vault'}
               </button>
             </div>
           </div>

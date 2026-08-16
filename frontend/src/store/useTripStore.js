@@ -314,7 +314,26 @@ const useTripStore = create((set, get) => ({
     set((state) => {
       const updatedTrips = state.trips.filter((trip) => trip._id !== tripId);
       localStorage.setItem('cached_trips', JSON.stringify(updatedTrips));
-      return { trips: updatedTrips };
+      return { 
+        trips: updatedTrips,
+        currentTrip: state.currentTrip?._id === tripId ? null : state.currentTrip,
+        transactions: state.currentTrip?._id === tripId ? [] : state.transactions,
+        fundRequests: state.currentTrip?._id === tripId ? [] : state.fundRequests,
+      };
+    });
+  },
+
+  leaveTrip: async (tripId) => {
+    await api.post(`/trips/${tripId}/leave`);
+    set((state) => {
+      const updatedTrips = state.trips.filter((trip) => trip._id !== tripId);
+      localStorage.setItem('cached_trips', JSON.stringify(updatedTrips));
+      return { 
+        trips: updatedTrips,
+        currentTrip: state.currentTrip?._id === tripId ? null : state.currentTrip,
+        transactions: state.currentTrip?._id === tripId ? [] : state.transactions,
+        fundRequests: state.currentTrip?._id === tripId ? [] : state.fundRequests,
+      };
     });
   },
 

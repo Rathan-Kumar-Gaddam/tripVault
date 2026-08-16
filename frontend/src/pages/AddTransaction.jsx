@@ -18,8 +18,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
-import CategoryPicker from '../components/CategoryPicker';
 import CustomSelect from '../components/CustomSelect';
+import { predictCategoryFromDescription } from '../utils/aiCategoryPredictor';
 
 const QUICK_AMOUNTS = [100, 500, 1000, 2000];
 
@@ -37,7 +37,6 @@ export default function AddTransaction() {
   const [tab, setTab] = useState(initialMode); // 'expense' | 'ask' | 'settlement'
   const [amount, setAmount] = useState(initialAmount);
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Food & Dining');
   
   // Payer state (defaults to logged-in user)
   const [payerId, setPayerId] = useState('');
@@ -273,12 +272,13 @@ export default function AddTransaction() {
 
     try {
       setIsSubmitting(true);
+      const detectedCat = predictCategoryFromDescription(trimmedDesc)?.categoryId || 'General';
       await logTransaction({
         tripId: id,
         type: 'expense',
         amount: numericAmount,
         description: trimmedDesc,
-        category,
+        category: detectedCat,
         payer: payerId,
         splitType: splitMode,
         sharedBy: finalSharedBy,
@@ -449,15 +449,6 @@ export default function AddTransaction() {
                   )}
                 </div>
               </div>
-
-              {/* Custom-Themed Categories & Custom Category Creator */}
-              <CategoryPicker
-                selectedCategory={category}
-                onSelectCategory={setCategory}
-                tripId={id}
-                onAutoFillDescription={(note) => { if (!description) setDescription(note); }}
-                currentDescription={description}
-              />
 
               {/* Description Input */}
               <div>
@@ -885,22 +876,23 @@ export default function AddTransaction() {
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                     Who is Paying? (Sender)
                   </label>
-                  <select 
+                  <CustomSelect
                     value={settlePayer}
-                    onChange={(e) => setSettlePayer(e.target.value)}
-                    className="w-full p-3.5 font-bold text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-emerald-500"
-                  >
-                    <option value="">Select Sender...</option>
-                    {members.map((m) => {
+                    onChange={(val) => setSettlePayer(val)}
+                    placeholder="Select Sender..."
+                    options={members.map((m) => {
                       const mUser = m.user || m;
-                      const uid = mUser?._id || mUser;
-                      return (
-                        <option key={uid} value={uid}>
-                          {mUser?.name} {uid === user?._id ? '(You)' : ''}
-                        </option>
-                      );
+                      const uid = (mUser?._id || mUser)?.toString();
+                      const isMe = uid === user?._id?.toString();
+                      return {
+                        value: uid,
+                        label: isMe ? `${mUser?.name} (You)` : mUser?.name || 'Companion',
+                        avatar: mUser?.avatar,
+                        initials: mUser?.name?.charAt(0).toUpperCase() || '?',
+                        sublabel: m.role === 'admin' ? 'Organizer' : 'Member',
+                      };
                     })}
-                  </select>
+                  />
                 </div>
 
                 <div className="flex justify-center -my-1">
@@ -913,22 +905,23 @@ export default function AddTransaction() {
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                     Who is Receiving? (Receiver to approve)
                   </label>
-                  <select 
+                  <CustomSelect
                     value={settleRecipient}
-                    onChange={(e) => setSettleRecipient(e.target.value)}
-                    className="w-full p-3.5 font-bold text-xs rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-emerald-500"
-                  >
-                    <option value="">Select Receiver...</option>
-                    {members.map((m) => {
+                    onChange={(val) => setSettleRecipient(val)}
+                    placeholder="Select Receiver..."
+                    options={members.map((m) => {
                       const mUser = m.user || m;
-                      const uid = mUser?._id || mUser;
-                      return (
-                        <option key={uid} value={uid}>
-                          {mUser?.name} {uid === user?._id ? '(You)' : ''}
-                        </option>
-                      );
+                      const uid = (mUser?._id || mUser)?.toString();
+                      const isMe = uid === user?._id?.toString();
+                      return {
+                        value: uid,
+                        label: isMe ? `${mUser?.name} (You)` : mUser?.name || 'Companion',
+                        avatar: mUser?.avatar,
+                        initials: mUser?.name?.charAt(0).toUpperCase() || '?',
+                        sublabel: m.role === 'admin' ? 'Organizer' : 'Member',
+                      };
                     })}
-                  </select>
+                  />
                 </div>
               </div>
             </div>

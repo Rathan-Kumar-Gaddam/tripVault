@@ -96,3 +96,17 @@
   border: 1px solid rgba(255, 255, 255, 0.6);
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
 }
+
+/* Premium Card Hover Lift & Glow */
+.card-hover-fx {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-hover-fx:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 35px -10px rgba(99, 102, 241, 0.12), 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Subtle Gradient Glow Ring */
+.glow-ring {
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.1), 0 8px 24px -4px rgba(99, 102, 241, 0.12);
+}

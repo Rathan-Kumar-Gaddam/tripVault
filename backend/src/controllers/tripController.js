@@ -7,12 +7,13 @@ import FundRequest from '../models/FundRequest.js';
 // @route   POST /api/trips
 export const createTrip = async (req, res) => {
   try {
-    const { name, destination, currency } = req.body;
+    const { name, destination, currency, budget } = req.body;
 
     const trip = await Trip.create({
       name,
       destination,
       currency: currency || '₹',
+      budget: Number(budget) > 0 ? Number(budget) : 0,
       members: [{ user: req.user._id, role: 'admin', balance: 0 }],
     });
 
@@ -240,7 +241,7 @@ export const updateTrip = async (req, res) => {
 };
 
 
-// @desc    Admin deletes a trip and all its transactions
+// @desc    Admin deletes a trip and all its transactions and fund requests
 // @route   DELETE /api/trips/:tripId
 export const deleteTrip = async (req, res) => {
   try {
@@ -250,28 +251,80 @@ export const deleteTrip = async (req, res) => {
     const trip = await Trip.findById(tripId);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
-    // Validate Requester is Admin
+    // Validate Requester is Admin or Sole Member
     const isAdmin = trip.members.some(
-      (m) => m.user.toString() === requesterId.toString() && m.role === 'admin'
+      (m) => (m.user?._id || m.user).toString() === requesterId.toString() && m.role === 'admin'
     );
+    const isSingleMember = trip.members.length === 1 && (trip.members[0].user?._id || trip.members[0].user).toString() === requesterId.toString();
     
-    if (!isAdmin) {
-      return res.status(403).json({ message: 'Only admins can delete this trip.' });
+    if (!isAdmin && !isSingleMember) {
+      return res.status(403).json({ message: 'Only trip admins can delete this trip vault.' });
     }
 
     // 1. Delete all transactions associated with this trip
     await Transaction.deleteMany({ tripId });
 
-    // 2. Delete the trip itself
+    // 2. Delete all fund requests associated with this trip
+    await FundRequest.deleteMany({ tripId });
+
+    // 3. Delete the trip itself
     await trip.deleteOne();
 
-    res.status(200).json({ message: 'Trip deleted successfully' });
+    res.status(200).json({ message: 'Trip vault permanently deleted successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Failed to delete trip' });
   }
 };
 
-// @desc    Admin removes a member from the trip
+// @desc    Member leaves a trip vault
+// @route   POST /api/trips/:tripId/leave
+export const leaveTrip = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const requesterId = req.user._id;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) return res.status(404).json({ message: 'Trip not found' });
+
+    const memberIndex = trip.members.findIndex(
+      (m) => (m.user?._id || m.user).toString() === requesterId.toString()
+    );
+
+    if (memberIndex === -1) {
+      return res.status(400).json({ message: 'You are not a member of this trip vault.' });
+    }
+
+    // If the user is the only member, delete the trip completely
+    if (trip.members.length === 1) {
+      await Transaction.deleteMany({ tripId });
+      await FundRequest.deleteMany({ tripId });
+      await trip.deleteOne();
+      return res.status(200).json({ message: 'Left and deleted trip vault.' });
+    }
+
+    const leavingMember = trip.members[memberIndex];
+    // If leaving member is admin and there are no other admins, promote next member
+    if (leavingMember.role === 'admin') {
+      const otherAdmins = trip.members.filter(
+        (m, idx) => idx !== memberIndex && m.role === 'admin'
+      );
+      if (otherAdmins.length === 0) {
+        const nextMember = trip.members.find((_, idx) => idx !== memberIndex);
+        if (nextMember) nextMember.role = 'admin';
+      }
+    }
+
+    // Remove member
+    trip.members.splice(memberIndex, 1);
+    await trip.save();
+
+    res.status(200).json({ message: 'Successfully left the trip vault.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to leave trip' });
+  }
+};
+
+// @desc    Admin removes a member from the trip, or member removes themselves
 // @route   DELETE /api/trips/:tripId/members/:memberUserId
 export const removeMember = async (req, res) => {
   try {
@@ -281,22 +334,46 @@ export const removeMember = async (req, res) => {
     const trip = await Trip.findById(tripId);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
-    // Validate Requester is Admin
+    const isSelf = memberUserId.toString() === requesterId.toString();
+
+    // Validate Requester is Admin or removing self
     const isAdmin = trip.members.some(
-      (m) => m.user.toString() === requesterId.toString() && m.role === 'admin'
+      (m) => (m.user?._id || m.user).toString() === requesterId.toString() && m.role === 'admin'
     );
-    if (!isAdmin) {
-      return res.status(403).json({ message: 'Only admins can remove members.' });
+    if (!isAdmin && !isSelf) {
+      return res.status(403).json({ message: 'Only admins can remove other members.' });
     }
 
-    // Prevent removing self
-    if (memberUserId.toString() === requesterId.toString()) {
-      return res.status(400).json({ message: 'Trip admin cannot be removed from the trip.' });
+    // If member removing themselves, redirect to leaveTrip logic
+    if (isSelf) {
+      if (trip.members.length === 1) {
+        await Transaction.deleteMany({ tripId });
+        await FundRequest.deleteMany({ tripId });
+        await trip.deleteOne();
+        return res.status(200).json({ message: 'Left and deleted trip vault.' });
+      }
+
+      const selfIndex = trip.members.findIndex(
+        (m) => (m.user?._id || m.user).toString() === requesterId.toString()
+      );
+      if (selfIndex !== -1) {
+        const leavingMember = trip.members[selfIndex];
+        if (leavingMember.role === 'admin') {
+          const otherAdmins = trip.members.filter((m, idx) => idx !== selfIndex && m.role === 'admin');
+          if (otherAdmins.length === 0) {
+            const nextMember = trip.members.find((_, idx) => idx !== selfIndex);
+            if (nextMember) nextMember.role = 'admin';
+          }
+        }
+        trip.members.splice(selfIndex, 1);
+        await trip.save();
+        return res.status(200).json({ message: 'Successfully left the trip.' });
+      }
     }
 
-    // Find member index
+    // Find member index to remove
     const memberIndex = trip.members.findIndex(
-      (m) => m.user.toString() === memberUserId.toString()
+      (m) => (m.user?._id || m.user).toString() === memberUserId.toString()
     );
     if (memberIndex === -1) {
       return res.status(404).json({ message: 'Member not found in this trip.' });

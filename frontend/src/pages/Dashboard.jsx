@@ -35,7 +35,11 @@ import {
   Share2,
   RefreshCw,
   ArrowLeft,
-  Crown
+  Crown,
+  Trash2,
+  LogOut,
+  SlidersHorizontal,
+  AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { 
@@ -53,6 +57,18 @@ import CustomSelect from '../components/CustomSelect';
 import { getCategoryMeta } from '../utils/categoryUtils';
 
 const PRESET_BUDGETS = [10000, 25000, 50000, 100000];
+
+const CURRENCIES = [
+  { code: '₹', label: '₹ INR (India)' },
+  { code: '$', label: '$ USD (United States)' },
+  { code: '€', label: '€ EUR (Europe)' },
+  { code: '£', label: '£ GBP (United Kingdom)' },
+  { code: 'AED', label: 'AED (UAE Dirham)' },
+  { code: '¥', label: '¥ JPY (Japan)' },
+  { code: '฿', label: '฿ THB (Thailand)' },
+  { code: 'CAD $', label: 'CAD $ (Canada)' },
+  { code: 'AUD $', label: 'AUD $ (Australia)' },
+];
 
 // Helper to extract emoji or destination icon
 const getTripIcon = (name = '') => {
@@ -79,6 +95,8 @@ export default function Dashboard() {
     fetchTripDetails, 
     logTransaction, 
     deleteTransaction,
+    deleteTrip,
+    leaveTrip,
     updateTrip,
     createFundRequest, 
     respondToFundRequest, 
@@ -106,6 +124,19 @@ export default function Dashboard() {
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [budgetValue, setBudgetValue] = useState('');
   const [isSavingBudget, setIsSavingBudget] = useState(false);
+
+  // Trip Settings & Management Modal State
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [editTripName, setEditTripName] = useState('');
+  const [editTripBudget, setEditTripBudget] = useState('');
+  const [editTripCurrency, setEditTripCurrency] = useState('₹');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // Delete / Leave confirmation states
+  const [showDeleteTripConfirm, setShowDeleteTripConfirm] = useState(false);
+  const [isDeletingTrip, setIsDeletingTrip] = useState(false);
+  const [showLeaveTripConfirm, setShowLeaveTripConfirm] = useState(false);
+  const [isLeavingTrip, setIsLeavingTrip] = useState(false);
 
   // Share Modal & Transaction Detail Modal State
   const [showShareModal, setShowShareModal] = useState(false);
@@ -457,6 +488,60 @@ export default function Dashboard() {
     }
   };
 
+  // Handle Save Trip Settings
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    if (isSavingSettings) return;
+
+    if (!editTripName.trim()) {
+      toast.error('Trip destination name is required');
+      return;
+    }
+
+    try {
+      setIsSavingSettings(true);
+      await updateTrip(id, {
+        name: editTripName.trim(),
+        budget: Math.max(0, Number(editTripBudget) || 0),
+        currency: editTripCurrency.trim() || '₹',
+      });
+      toast.success('Trip settings updated! ⚙️');
+      setShowSettingsModal(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update trip settings.');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // Handle Delete Trip Vault (Admin)
+  const handleDeleteTripVault = async () => {
+    try {
+      setIsDeletingTrip(true);
+      await deleteTrip(id);
+      toast.success('Trip vault permanently deleted 🗑️');
+      navigate('/');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete trip.');
+    } finally {
+      setIsDeletingTrip(false);
+    }
+  };
+
+  // Handle Leave Trip Vault (Member)
+  const handleLeaveTripVault = async () => {
+    try {
+      setIsLeavingTrip(true);
+      await leaveTrip(id);
+      toast.success('Successfully left the trip vault 🚪');
+      navigate('/');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to leave trip.');
+    } finally {
+      setIsLeavingTrip(false);
+    }
+  };
+
   // Export handlers
   const handleExportCSV = () => {
     try {
@@ -574,6 +659,20 @@ export default function Dashboard() {
             title="Sync Live Passbook"
           >
             <RefreshCw size={18} className={isRefreshing ? 'animate-spin text-indigo-600' : ''} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEditTripName(currentTrip?.name || '');
+              setEditTripBudget(currentTrip?.budget || '');
+              setEditTripCurrency(currentTrip?.currency || '₹');
+              setShowSettingsModal(true);
+            }}
+            className="w-11 h-11 rounded-2xl bg-white text-slate-700 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-sm flex items-center justify-center active:scale-90 transition-all"
+            title="Trip Settings & Vault Options"
+          >
+            <SlidersHorizontal size={18} />
           </button>
 
           <button 
@@ -1661,6 +1760,275 @@ export default function Dashboard() {
         onCancel={handleCancelRequest}
         respondingId={respondingId}
       />
+
+      {/* ========================================================================= */}
+      {/* TRIP SETTINGS & VAULT MANAGEMENT MODAL                                    */}
+      {/* ========================================================================= */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150 my-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xl">
+                  <SlidersHorizontal size={22} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 font-heading">
+                    Vault Settings
+                  </h3>
+                  <p className="text-xs text-slate-500 font-semibold">
+                    Manage {currentTrip?.name} configuration
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowSettingsModal(false)}
+                disabled={isSavingSettings}
+                className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-5">
+              {/* Trip Destination Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Trip Destination / Name
+                </label>
+                <input
+                  type="text"
+                  value={editTripName}
+                  onChange={(e) => setEditTripName(e.target.value)}
+                  placeholder="e.g. Goa Trip 🏖️"
+                  required
+                  disabled={isSavingSettings}
+                  className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                />
+              </div>
+
+              {/* Currency & Budget Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                    Currency
+                  </label>
+                  <CustomSelect
+                    options={CURRENCIES.map(c => ({ value: c.code, label: c.label }))}
+                    value={editTripCurrency}
+                    onChange={setEditTripCurrency}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                    Budget Limit ({editTripCurrency})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={editTripBudget}
+                    onChange={(e) => setEditTripBudget(e.target.value)}
+                    placeholder="0 (Unlimited)"
+                    disabled={isSavingSettings}
+                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Save Settings Button */}
+              <button
+                type="submit"
+                disabled={isSavingSettings}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl text-xs sm:text-sm shadow-lg shadow-indigo-600/25 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <span>{isSavingSettings ? 'Saving Changes...' : 'Save Settings'}</span>
+              </button>
+            </form>
+
+            {/* Quick Actions Strip */}
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3">
+                Vault Quick Actions
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSettingsModal(false);
+                    navigate(`/trip/${id}/members`);
+                  }}
+                  className="p-3 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-200 border border-slate-200/80 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-all active:scale-95 text-left"
+                >
+                  <Users size={16} className="text-indigo-600 shrink-0" />
+                  <span>Manage Members</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSettingsModal(false);
+                    setShowShareModal(true);
+                  }}
+                  className="p-3 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-200 border border-slate-200/80 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-all active:scale-95 text-left"
+                >
+                  <Share2 size={16} className="text-purple-600 shrink-0" />
+                  <span>Invite Friends</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="p-3 bg-slate-50 hover:bg-emerald-50/50 hover:border-emerald-200 border border-slate-200/80 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-all active:scale-95 text-left"
+                >
+                  <Download size={16} className="text-emerald-600 shrink-0" />
+                  <span>Export CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintPDF}
+                  className="p-3 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-200 border border-slate-200/80 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-all active:scale-95 text-left"
+                >
+                  <Printer size={16} className="text-blue-600 shrink-0" />
+                  <span>Print Report</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-[11px] font-bold text-rose-500 uppercase tracking-wider mb-3">
+                Danger Zone
+              </p>
+
+              {isAdmin ? (
+                <div className="bg-rose-50/60 border border-rose-100 p-4 rounded-2xl flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-black text-rose-900">Delete Trip Vault</h4>
+                    <p className="text-[11px] font-medium text-rose-600">
+                      Permanently delete this trip, transactions, and member balances.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      setShowDeleteTripConfirm(true);
+                    }}
+                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm shadow-rose-600/20 active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-amber-50/60 border border-amber-100 p-4 rounded-2xl flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-black text-amber-900">Leave Trip Vault</h4>
+                    <p className="text-[11px] font-medium text-amber-700">
+                      Remove this trip vault from your dashboard.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      setShowLeaveTripConfirm(true);
+                    }}
+                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm shadow-amber-600/20 active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
+                  >
+                    <LogOut size={13} />
+                    <span>Leave</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* DELETE TRIP CONFIRMATION MODAL                                            */}
+      {/* ========================================================================= */}
+      {showDeleteTripConfirm && (
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-rose-100">
+              <AlertTriangle size={28} />
+            </div>
+
+            <h3 className="text-lg font-extrabold text-center text-slate-900 mb-1.5 font-heading">
+              Delete Trip Vault?
+            </h3>
+
+            <p className="text-xs text-center text-slate-500 mb-6">
+              This will permanently delete <strong className="text-slate-800">{currentTrip?.name}</strong>, all its transactions, and all member balances. This action cannot be undone.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteTripConfirm(false)}
+                disabled={isDeletingTrip}
+                className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteTripVault}
+                disabled={isDeletingTrip}
+                className="flex-1 py-3.5 bg-rose-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-rose-600/25 hover:bg-rose-700 active:scale-95 transition disabled:opacity-50"
+              >
+                {isDeletingTrip ? 'Deleting...' : 'Delete Vault'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* LEAVE TRIP CONFIRMATION MODAL                                             */}
+      {/* ========================================================================= */}
+      {showLeaveTripConfirm && (
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-amber-100">
+              <LogOut size={28} />
+            </div>
+
+            <h3 className="text-lg font-extrabold text-center text-slate-900 mb-1.5 font-heading">
+              Leave Trip Vault?
+            </h3>
+
+            <p className="text-xs text-center text-slate-500 mb-6">
+              You will be removed from <strong className="text-slate-800">{currentTrip?.name}</strong> and it will no longer appear on your dashboard. You will need an invite link to rejoin.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLeaveTripConfirm(false)}
+                disabled={isLeavingTrip}
+                className="flex-1 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs hover:bg-slate-200 active:scale-95 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleLeaveTripVault}
+                disabled={isLeavingTrip}
+                className="flex-1 py-3.5 bg-amber-600 text-white font-bold rounded-2xl text-xs shadow-lg shadow-amber-600/25 hover:bg-amber-700 active:scale-95 transition disabled:opacity-50"
+              >
+                {isLeavingTrip ? 'Leaving...' : 'Leave Vault'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
