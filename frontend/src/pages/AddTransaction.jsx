@@ -465,7 +465,7 @@ export default function AddTransaction() {
                   placeholder="e.g. Seafood Dinner, Beach Scooters, Resort Stay" 
                   required 
                   disabled={isSubmitting}
-                  className="w-full p-4 font-medium text-sm rounded-2xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
+                  className="w-full p-4 font-semibold text-slate-900 text-sm rounded-2xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
                 />
               </div>
             </div>
@@ -674,7 +674,7 @@ export default function AddTransaction() {
                                   placeholder="0.00"
                                   value={customAmounts[uid] || ''}
                                   onChange={(e) => handleCustomAmountChange(uid, e.target.value)}
-                                  className="w-full p-2 text-xs font-bold bg-white border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-right"
+                                  className="w-full p-2 text-xs font-bold text-slate-900 bg-white border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-right"
                                 />
                               </div>
                             ) : (
@@ -987,7 +987,7 @@ export default function AddTransaction() {
                 onChange={(e) => setSettleNote(e.target.value)}
                 placeholder="e.g. Paid via GooglePay / Cash / UPI" 
                 disabled={isSubmitting}
-                className="w-full p-4 font-medium text-sm rounded-2xl bg-white border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
+                className="w-full p-4 font-semibold text-slate-900 text-sm rounded-2xl bg-white border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
               />
             </div>
           </>
