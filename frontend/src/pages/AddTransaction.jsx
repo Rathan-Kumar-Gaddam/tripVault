@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
 import CustomSelect from '../components/CustomSelect';
+import CategoryPicker from '../components/CategoryPicker';
 import { predictCategoryFromDescription } from '../utils/aiCategoryPredictor';
 
 const QUICK_AMOUNTS = [100, 500, 1000, 2000];
@@ -37,6 +38,7 @@ export default function AddTransaction() {
   const [tab, setTab] = useState(initialMode); // 'expense' | 'ask' | 'settlement'
   const [amount, setAmount] = useState(initialAmount);
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('General');
   
   // Payer state (defaults to logged-in user)
   const [payerId, setPayerId] = useState('');
