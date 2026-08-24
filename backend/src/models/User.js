@@ -16,6 +16,7 @@ const userSchema = new mongoose.Schema(
     },
     password: { type: String }, // Optional for members added via phone number
     avatar: { type: String, default: '' }, // Profile photo base64 data URI or URL
+    upiId: { type: String, trim: true, default: '' }, // UPI ID for instant settlements e.g. name@upi
     requiresPasswordChange: { type: Boolean, default: false }, 
   },
   { timestamps: true }

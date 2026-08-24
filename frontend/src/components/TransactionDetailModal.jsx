@@ -28,6 +28,7 @@ export default function TransactionDetailModal({
 }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isReceiptZoomed, setIsReceiptZoomed] = useState(false);
 
   if (!isOpen || !transaction) return null;
 
@@ -190,6 +191,51 @@ export default function TransactionDetailModal({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Attached Bill Receipt Snapshot */}
+        {transaction.receipt && (
+          <div className="space-y-2">
+            <h4 className="font-extrabold text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1.5 px-1">
+              <Receipt size={13} className="text-indigo-600" />
+              <span>Bill Receipt Snapshot</span>
+            </h4>
+            <div 
+              onClick={() => setIsReceiptZoomed(true)} 
+              className="relative group rounded-2xl overflow-hidden border border-slate-200 cursor-zoom-in bg-slate-900 max-h-48 flex items-center justify-center shadow-xs"
+            >
+              <img 
+                src={transaction.receipt} 
+                alt="Bill Receipt" 
+                className="w-full h-48 object-cover group-hover:scale-105 transition-all duration-300" 
+              />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-xs gap-1.5">
+                <span>🔍 Click to Zoom</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Zoomed Receipt Fullscreen Overlay */}
+        {isReceiptZoomed && (
+          <div 
+            onClick={() => setIsReceiptZoomed(false)}
+            className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in"
+          >
+            <div className="relative max-w-2xl max-h-[90vh]">
+              <button 
+                onClick={() => setIsReceiptZoomed(false)}
+                className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-all"
+              >
+                <X size={20} />
+              </button>
+              <img 
+                src={transaction.receipt} 
+                alt="Receipt Full Preview" 
+                className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/20"
+              />
             </div>
           </div>
         )}

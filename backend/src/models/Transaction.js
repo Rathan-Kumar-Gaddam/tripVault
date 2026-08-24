@@ -28,6 +28,7 @@ const transactionSchema = new mongoose.Schema(
     },
     splits: [splitSchema],
     sharedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    receipt: { type: String, default: '' }, // Compressed base64 or URL snapshot of bill/receipt
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }

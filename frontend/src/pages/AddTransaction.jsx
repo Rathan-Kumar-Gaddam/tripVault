@@ -5,7 +5,7 @@ import {
   ArrowLeft, 
   Check, 
   Circle, 
-  Sparkles,
+  Sparkles, 
   Users, 
   Calculator, 
   UserCheck, 
@@ -14,13 +14,20 @@ import {
   HandCoins, 
   ReceiptText, 
   HelpCircle, 
-  Send 
+  Send,
+  Camera,
+  Trash2,
+  Image as ImageIcon,
+  Tag,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
 import CustomSelect from '../components/CustomSelect';
 import CategoryPicker from '../components/CategoryPicker';
 import { predictCategoryFromDescription } from '../utils/aiCategoryPredictor';
+import { getCategoryMeta } from '../utils/categoryUtils';
 
 const QUICK_AMOUNTS = [100, 500, 1000, 2000];
 
@@ -39,6 +46,9 @@ export default function AddTransaction() {
   const [amount, setAmount] = useState(initialAmount);
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('General');
+  const [isCustomCategoryOpen, setIsCustomCategoryOpen] = useState(false);
+  const [hasManuallySelectedCategory, setHasManuallySelectedCategory] = useState(false);
+  const [receipt, setReceipt] = useState('');
   
   // Payer state (defaults to logged-in user)
   const [payerId, setPayerId] = useState('');
@@ -141,6 +151,58 @@ export default function AddTransaction() {
     .filter(([uId]) => activeSplitUsers.includes(uId))
     .reduce((sum, [, val]) => sum + (Number(val) || 0), 0);
   const customDifference = Math.round((numericAmount - customSum) * 100) / 100;
+
+  const handleDescriptionChange = (e) => {
+    const text = e.target.value;
+    setDescription(text);
+    if (!hasManuallySelectedCategory && text.trim()) {
+      const pred = predictCategoryFromDescription(text);
+      if (pred?.categoryId) {
+        setCategory(pred.categoryId);
+      }
+    }
+  };
+
+  const handleSelectCategory = (catId) => {
+    setCategory(catId);
+    setHasManuallySelectedCategory(true);
+  };
+
+  const handleReceiptUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File too large. Please select an image under 10MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+        setReceipt(compressedBase64);
+        toast.success('Bill receipt photo attached! 📸');
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -274,17 +336,18 @@ export default function AddTransaction() {
 
     try {
       setIsSubmitting(true);
-      const detectedCat = predictCategoryFromDescription(trimmedDesc)?.categoryId || 'General';
+      const finalCat = category || predictCategoryFromDescription(trimmedDesc)?.categoryId || 'General';
       await logTransaction({
         tripId: id,
         type: 'expense',
         amount: numericAmount,
         description: trimmedDesc,
-        category: detectedCat,
+        category: finalCat,
         payer: payerId,
         splitType: splitMode,
         sharedBy: finalSharedBy,
         splits: finalSplits,
+        receipt: receipt || '',
       });
       toast.success(splitMode === 'self' ? 'Personal expense logged! 👤' : 'Group expense logged & synced! 💸');
       navigate(`/trip/${id}`);
@@ -461,12 +524,108 @@ export default function AddTransaction() {
                   name="description" 
                   type="text" 
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={handleDescriptionChange}
                   placeholder="e.g. Seafood Dinner, Beach Scooters, Resort Stay" 
                   required 
                   disabled={isSubmitting}
                   className="w-full p-4 font-semibold text-slate-900 text-sm rounded-2xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm" 
                 />
+              </div>
+
+              {/* Interactive Category Override Chip */}
+              {(() => {
+                const catMeta = getCategoryMeta(category, id);
+                return (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between p-3 bg-white border border-slate-200/80 rounded-2xl shadow-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-xl p-1.5 bg-slate-50 rounded-xl border border-slate-100 shrink-0">{catMeta.emoji}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-900 truncate">{catMeta.label}</span>
+                            {!hasManuallySelectedCategory ? (
+                              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
+                                ✨ Auto-Tag
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100 shrink-0">
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-medium">Category</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomCategoryOpen(!isCustomCategoryOpen)}
+                        className="px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-600 transition-all shrink-0 flex items-center gap-1 active:scale-95"
+                      >
+                        <span>{isCustomCategoryOpen ? 'Close' : 'Change'}</span>
+                        {isCustomCategoryOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      </button>
+                    </div>
+
+                    {isCustomCategoryOpen && (
+                      <div className="p-3 bg-slate-50/80 border border-slate-200/80 rounded-2xl animate-fadeIn">
+                        <CategoryPicker
+                          selectedCategory={category}
+                          onSelectCategory={(c) => { handleSelectCategory(c); setIsCustomCategoryOpen(false); }}
+                          tripId={id}
+                          onAutoFillDescription={(note) => { if (!description) setDescription(note); }}
+                          currentDescription={description}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Receipt / Bill Photo Attachment */}
+              <div className="p-3.5 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Camera size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 truncate">
+                      {receipt ? 'Bill Receipt Attached 📸' : 'Attach Bill Photo'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-medium truncate">
+                      {receipt ? 'Bill attached for companion transparency' : 'Optional receipt snapshot'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    id="receipt-file-input" 
+                    className="hidden" 
+                    onChange={handleReceiptUpload} 
+                  />
+                  {receipt ? (
+                    <div className="flex items-center gap-1.5">
+                      <img src={receipt} alt="Receipt preview" className="w-9 h-9 rounded-xl object-cover border border-indigo-200 shadow-xs" />
+                      <button 
+                        type="button" 
+                        onClick={() => setReceipt('')} 
+                        className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" 
+                        title="Remove receipt"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label 
+                      htmlFor="receipt-file-input" 
+                      className="px-3 py-1.5 bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-xs font-bold text-slate-700 rounded-xl cursor-pointer shadow-2xs active:scale-95 transition-all flex items-center gap-1"
+                    >
+                      <span>+ Add Photo</span>
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
 

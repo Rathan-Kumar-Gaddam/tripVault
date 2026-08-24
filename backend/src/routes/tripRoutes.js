@@ -8,6 +8,7 @@ import {
   updateTrip,
   deleteTrip,
   joinTrip,
+  closeTrip,
   getTripPreview,
   leaveTrip 
 } from '../controllers/tripController.js';
@@ -24,6 +25,9 @@ router.route('/:tripId/preview')
 
 router.route('/:tripId/join')
   .post(protect, joinTrip);
+
+router.route('/:tripId/close')
+  .post(protect, closeTrip);
 
 router.route('/:tripId/leave')
   .post(protect, leaveTrip);

@@ -14,18 +14,24 @@ import toast from 'react-hot-toast';
 
 export default function ShareTripModal({ trip, isOpen, onClose }) {
   const [copied, setCopied] = useState(false);
+  const [inviteRole, setInviteRole] = useState('member'); // 'member' | 'viewer'
 
   if (!isOpen || !trip) return null;
 
   const tripId = trip._id;
-  const inviteUrl = `${window.location.origin}/join/${tripId}`;
-  const shareText = `Join my trip vault "${trip.name}" on TripVault to track expenses, live balances, and settle debts: ${inviteUrl}`;
+  const inviteUrl = inviteRole === 'viewer' 
+    ? `${window.location.origin}/join/${tripId}?role=viewer`
+    : `${window.location.origin}/join/${tripId}`;
+  
+  const shareText = inviteRole === 'viewer'
+    ? `View the passbook and expenses for "${trip.name}" on TripVault (Read-Only): ${inviteUrl}`
+    : `Join my trip vault "${trip.name}" on TripVault to track expenses, live balances, and settle debts: ${inviteUrl}`;
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
-      toast.success('Trip link copied to clipboard! 📋');
+      toast.success(inviteRole === 'viewer' ? 'Read-only link copied! 👁️' : 'Trip member link copied! 📋');
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
       toast.error('Failed to copy link.');
@@ -82,8 +88,34 @@ export default function ShareTripModal({ trip, isOpen, onClose }) {
             Share Trip Vault
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Invite travel companions to track shared expenses and view passbook balances together.
+            Invite travel companions to track shared expenses or share a read-only passbook.
           </p>
+        </div>
+
+        {/* Role Selector */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100/80 rounded-2xl">
+          <button
+            type="button"
+            onClick={() => setInviteRole('member')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+              inviteRole === 'member'
+                ? 'bg-white text-indigo-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            👥 Full Member
+          </button>
+          <button
+            type="button"
+            onClick={() => setInviteRole('viewer')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+              inviteRole === 'viewer'
+                ? 'bg-white text-indigo-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            👁️ Read-Only
+          </button>
         </div>
 
         {/* Copy Link Input Box */}

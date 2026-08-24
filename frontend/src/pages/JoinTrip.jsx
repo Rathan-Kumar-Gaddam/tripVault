@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useTripStore from '../store/useTripStore';
 import { 
   PlaneTakeoff, 
@@ -10,14 +10,19 @@ import {
   CheckCircle2, 
   Smartphone, 
   User, 
-  ShieldCheck 
+  ShieldCheck,
+  Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function JoinTrip() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, getTripPreview, joinTrip, loginWithPhone, register, isLoading } = useTripStore();
+
+  const requestedRole = searchParams.get('role') === 'viewer' ? 'viewer' : 'member';
+  const isViewer = requestedRole === 'viewer';
 
   const [tripPreview, setTripPreview] = useState(null);
   const [error, setError] = useState(null);
@@ -40,7 +45,7 @@ export default function JoinTrip() {
   const handleJoinAuthenticated = async () => {
     try {
       setIsJoining(true);
-      await joinTrip(id);
+      await joinTrip(id, requestedRole);
       sessionStorage.removeItem('pendingJoinTripId');
       toast.success(`Welcome to ${tripPreview?.name || 'the trip'}! 🎉`);
       navigate(`/trip/${id}`);

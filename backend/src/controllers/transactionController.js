@@ -90,7 +90,8 @@ export const logTransaction = async (req, res) => {
       splitType = 'all', 
       sharedBy = [], 
       splits = [],
-      recipient 
+      recipient,
+      receipt = ''
     } = req.body;
     
     const userId = req.user._id;
@@ -109,15 +110,22 @@ export const logTransaction = async (req, res) => {
       return res.status(404).json({ message: 'Trip not found.' });
     }
 
-    // Verify current user is a member of the trip
-    const isMember = trip.members.some((m) => m.user.toString() === userId.toString());
-    if (!isMember) {
+    if (trip.isClosed) {
+      return res.status(400).json({ message: 'This trip vault is closed and frozen. Reopen the vault in settings to log new expenses.' });
+    }
+
+    // Verify current user is a member of the trip and not a read-only viewer
+    const userMember = trip.members.find((m) => (m.user?._id || m.user).toString() === userId.toString());
+    if (!userMember) {
       return res.status(403).json({ message: 'You must be a member of this trip to log transactions.' });
+    }
+    if (userMember.role === 'viewer') {
+      return res.status(403).json({ message: 'You have read-only (viewer) access to this vault.' });
     }
 
     // Determine Payer (defaults to logged-in user if not provided)
     const effectivePayer = payer || userId;
-    const isPayerMember = trip.members.some((m) => m.user.toString() === effectivePayer.toString());
+    const isPayerMember = trip.members.some((m) => (m.user?._id || m.user).toString() === effectivePayer.toString());
     if (!isPayerMember) {
       return res.status(400).json({ message: 'Payer must be a member of this trip.' });
     }
@@ -135,13 +143,15 @@ export const logTransaction = async (req, res) => {
       finalSplits = [{ user: targetRecipient, amount: numAmount }];
       finalSharedBy = [targetRecipient];
     } else if (splitType === 'all') {
-      // Split equally among all trip members
-      const splitAmount = Math.round((numAmount / trip.members.length) * 100) / 100;
-      finalSplits = trip.members.map((m) => ({
+      // Split equally among all trip members (excluding read-only viewers if any)
+      const spendingMembers = trip.members.filter(m => m.role !== 'viewer');
+      const targetMembers = spendingMembers.length > 0 ? spendingMembers : trip.members;
+      const splitAmount = Math.round((numAmount / targetMembers.length) * 100) / 100;
+      finalSplits = targetMembers.map((m) => ({
         user: m.user,
         amount: splitAmount,
       }));
-      finalSharedBy = trip.members.map((m) => m.user);
+      finalSharedBy = targetMembers.map((m) => m.user);
     } else if (splitType === 'self') {
       // Personal Expense: Paid by payer exclusively for themselves (0 debt created)
       finalSplits = [{ user: effectivePayer, amount: numAmount }];
@@ -187,6 +197,7 @@ export const logTransaction = async (req, res) => {
       splitType,
       splits: finalSplits,
       sharedBy: finalSharedBy,
+      receipt: receipt || '',
       createdBy: userId,
     });
 

@@ -122,6 +122,46 @@ export default function History() {
     });
   }, [transactions, searchQuery, filterType, selectedCategory, user?._id, members]);
 
+  // Group filtered transactions by calendar date (e.g. Today, Yesterday, Aug 16)
+  const groupedTransactionsByDay = useMemo(() => {
+    const groups = {};
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toDateString();
+
+    filteredTransactions.forEach((tx) => {
+      const d = new Date(tx.createdAt || Date.now());
+      const dateKey = d.toISOString().split('T')[0]; // YYYY-MM-DD
+      const dString = d.toDateString();
+
+      let displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' });
+      if (dString === todayStr) {
+        displayLabel = `Today · ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      } else if (dString === yesterdayStr) {
+        displayLabel = `Yesterday · ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      } else if (d.getFullYear() !== now.getFullYear()) {
+        displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+
+      if (!groups[dateKey]) {
+        groups[dateKey] = {
+          dateKey,
+          label: displayLabel,
+          items: [],
+          dayTotalSpend: 0,
+        };
+      }
+      groups[dateKey].items.push(tx);
+      if (tx.type === 'expense') {
+        groups[dateKey].dayTotalSpend += Number(tx.amount) || 0;
+      }
+    });
+
+    return Object.values(groups).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+  }, [filteredTransactions]);
+
   // Memoized Totals
   const { totalSpent, totalMyConsumption, totalMyPaidUpfront } = useMemo(() => {
     let spent = 0;
@@ -413,8 +453,8 @@ export default function History() {
         </div>
       </div>
 
-      {/* Timeline List */}
-      {filteredTransactions.length === 0 ? (
+      {/* Timeline List Grouped By Date */}
+      {groupedTransactionsByDay.length === 0 ? (
         <div className="text-center bg-white p-8 rounded-[2rem] border border-slate-200/80 mt-6 shadow-sm">
           <Receipt className="mx-auto text-slate-300 mb-3" size={40} />
           <h3 className="font-bold text-slate-800 text-sm mb-1">No Transactions Found</h3>
@@ -423,157 +463,178 @@ export default function History() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {filteredTransactions.map((tx) => {
-            const isExpense = tx.type === 'expense';
-            const isSettlement = tx.type === 'settlement';
-            const payer = tx.payer || tx.createdBy;
-            const isPaidByMe = (payer?._id || payer) === user?._id;
-            const canDelete = isPaidByMe || isAdmin;
-            const myIndividualShare = computeUserShare(tx, user?._id, currentTrip.members);
-
-            // Recipient for settlement
-            const recipient = tx.splits?.[0]?.user || tx.sharedBy?.[0];
-
-            return (
-              <div 
-                key={tx._id} 
-                onClick={() => setSelectedTx(tx)}
-                className="bg-white p-4 rounded-3xl border border-slate-100/80 shadow-sm flex items-start gap-3.5 hover:border-indigo-300 cursor-pointer active:scale-95 transition-all group"
-              >
-                {/* Icon Indicator */}
-                <div className={`p-3 rounded-2xl shrink-0 mt-0.5 group-hover:scale-105 transition-transform ${
-                  isSettlement 
-                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' 
-                    : 'bg-rose-50 text-rose-500 border border-rose-100'
-                }`}>
-                  {isSettlement ? <HandCoins size={20} /> : <ArrowDownRight size={20} />}
+        <div className="flex flex-col gap-6">
+          {groupedTransactionsByDay.map((group) => (
+            <div key={group.dateKey} className="flex flex-col gap-3">
+              {/* Day Header */}
+              <div className="flex items-center justify-between px-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                  <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">{group.label}</h4>
                 </div>
+                <span className="text-[11px] font-bold text-slate-500">
+                  {group.items.length} {group.items.length === 1 ? 'spend' : 'spends'}
+                  {group.dayTotalSpend > 0 && ` · -${currency}${group.dayTotalSpend.toFixed(2)}`}
+                </span>
+              </div>
 
-                {/* Details */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start mb-1 gap-2">
-                    <h3 className="font-bold text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">{tx.description}</h3>
-                    <span className={`font-black text-sm whitespace-nowrap font-heading ${
-                      isSettlement ? 'text-emerald-600' : 'text-rose-600'
-                    }`}>
-                      {isSettlement ? '+' : '-'}{currency}{tx.amount.toFixed(2)}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 mb-2 flex-wrap">
-                    <span className="flex items-center gap-1">
-                      <Calendar size={11} />
-                      <span>{formatDate(tx.createdAt)}</span>
-                    </span>
-                    {tx.category && (() => {
-                      const catMeta = getCategoryMeta(tx.category, id);
-                      return (
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${catMeta.theme?.badge || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                          <span>{catMeta.emoji}</span>
-                          <span>{tx.category}</span>
-                        </span>
-                      );
-                    })()}
-                    {isExpense && myIndividualShare > 0 && (
-                      <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
-                        Your share: {currency}{myIndividualShare.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {/* Payer & Split Info */}
-                  <div className="flex flex-col gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 p-2.5 rounded-2xl w-full">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="font-bold text-slate-900">
-                          {isPaidByMe ? 'You paid total' : `${payer?.name || 'Companion'} paid total`}
-                        </span>
-                        {isSettlement && recipient && (
-                          <span className="text-slate-500 truncate">
-                            → {recipient._id === user?._id ? 'You' : recipient.name}
-                          </span>
-                        )}
+              {/* Day Transactions */}
+              <div className="flex flex-col gap-3">
+                {group.items.map((tx) => {
+                  const isExpense = tx.type === 'expense';
+                  const isSettlement = tx.type === 'settlement';
+                  const payer = tx.payer || tx.createdBy;
+                  const isPaidByMe = (payer?._id || payer) === user?._id;
+                  const myIndividualShare = computeUserShare(tx, user?._id, currentTrip.members);
+                  const recipient = tx.splits?.[0]?.user || tx.sharedBy?.[0];
+
+                  return (
+                    <div 
+                      key={tx._id} 
+                      onClick={() => setSelectedTx(tx)}
+                      className="bg-white p-4 rounded-3xl border border-slate-100/80 shadow-xs flex items-start gap-3.5 hover:border-indigo-300 cursor-pointer active:scale-95 transition-all group"
+                    >
+                      {/* Icon Indicator */}
+                      <div className={`p-3 rounded-2xl shrink-0 mt-0.5 group-hover:scale-105 transition-transform ${
+                        isSettlement 
+                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' 
+                          : 'bg-rose-50 text-rose-500 border border-rose-100'
+                      }`}>
+                        {isSettlement ? <HandCoins size={20} /> : <ArrowDownRight size={20} />}
                       </div>
 
-                      <span className="text-[10px] font-bold text-indigo-600 group-hover:underline">
-                        Details →
-                      </span>
-                    </div>
-
-                    {/* Split Type Badge & Per-Person Breakdown */}
-                    {isExpense && (() => {
-                      const effectiveSplits = (tx.splits && tx.splits.length > 0)
-                        ? tx.splits
-                        : (tx.sharedBy && tx.sharedBy.length > 0)
-                          ? tx.sharedBy.map(u => ({ user: u, amount: tx.amount / tx.sharedBy.length }))
-                          : (currentTrip.members || []).map(m => ({ user: m.user, amount: tx.amount / (currentTrip.members?.length || 1) }));
-
-                      const splitCount = effectiveSplits.length;
-                      const payerUid = (payer?._id || payer)?.toString();
-                      const isSelfExpense = tx.splitType === 'self' || (splitCount === 1 && (effectiveSplits[0]?.user?._id || effectiveSplits[0]?.user)?.toString() === payerUid);
-                      const isCommon = !isSelfExpense && (tx.splitType === 'all' || !tx.splitType);
-                      const isCustom = !isSelfExpense && tx.splitType === 'custom';
-                      const isIndividual = !isSelfExpense && tx.splitType === 'individual';
-                      const perPersonEqual = tx.amount / Math.max(1, splitCount);
-
-                      return (
-                        <div className="mt-1 pt-2 border-t border-slate-200/60">
-                          <div className="flex items-center justify-between mb-1.5 text-[10px]">
-                            <span className="font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                              {isSelfExpense && <span className="text-purple-700 font-extrabold">👤 Personal Expense (No Split)</span>}
-                              {isCommon && `👥 Split equally (${currency}${perPersonEqual.toFixed(2)} / each)`}
-                              {isCustom && `✨ Custom split (${splitCount} members)`}
-                              {isIndividual && `🎯 1-on-1 split`}
-                            </span>
-                            <span className="font-semibold text-slate-400">
-                              {isSelfExpense ? 'No debts created' : `${splitCount} ${splitCount === 1 ? 'person' : 'people'}`}
-                            </span>
-                          </div>
-
-                          {/* Member Share Chips */}
-                          <div className="flex flex-wrap gap-1.5">
-                            {isSelfExpense ? (
-                              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-purple-50 border border-purple-200 text-purple-900 shadow-sm">
-                                <span>{isPaidByMe ? 'You (100%)' : `${payer?.name || 'Payer'} (100%)`}:</span>
-                                <span className="font-extrabold font-heading text-purple-700">
-                                  {currency}{Number(tx.amount).toFixed(2)}
-                                </span>
-                              </div>
-                            ) : (
-                              effectiveSplits.map((s, idx) => {
-                                const sUser = s.user || s;
-                                const sUserId = (sUser?._id || sUser)?.toString();
-                                const isSelfShare = sUserId === user?._id?.toString();
-                                const sName = isSelfShare ? 'You' : (sUser?.name || 'Member');
-                                const sAmount = s.amount !== undefined ? s.amount : perPersonEqual;
-
-                                return (
-                                  <div 
-                                    key={sUserId || idx}
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all ${
-                                      isSelfShare 
-                                        ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm' 
-                                        : 'bg-white border-slate-200/80 text-slate-700'
-                                    }`}
-                                  >
-                                    <span className="truncate max-w-[85px]">{sName}:</span>
-                                    <span className="font-extrabold font-heading text-rose-600">
-                                      {currency}{Number(sAmount).toFixed(2)}
-                                    </span>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start mb-1 gap-2">
+                          <h3 className="font-bold text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">{tx.description}</h3>
+                          <span className={`font-black text-sm whitespace-nowrap font-heading ${
+                            isSettlement ? 'text-emerald-600' : 'text-rose-600'
+                          }`}>
+                            {isSettlement ? '+' : '-'}{currency}{tx.amount.toFixed(2)}
+                          </span>
                         </div>
-                      );
-                    })()}
-                  </div>
-                </div>
+                        
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mb-2 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Calendar size={11} />
+                            <span>{formatDate(tx.createdAt)}</span>
+                          </span>
+                          {tx.category && (() => {
+                            const catMeta = getCategoryMeta(tx.category, id);
+                            return (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${catMeta.theme?.badge || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                <span>{catMeta.emoji}</span>
+                                <span>{tx.category}</span>
+                              </span>
+                            );
+                          })()}
+                          {tx.receipt && (
+                            <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1">
+                              <span>📸 Receipt</span>
+                            </span>
+                          )}
+                          {isExpense && myIndividualShare > 0 && (
+                            <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+                              Your share: {currency}{myIndividualShare.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Payer & Split Info */}
+                        <div className="flex flex-col gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 p-2.5 rounded-2xl w-full">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="font-bold text-slate-900">
+                                {isPaidByMe ? 'You paid total' : `${payer?.name || 'Companion'} paid total`}
+                              </span>
+                              {isSettlement && recipient && (
+                                <span className="text-slate-500 truncate">
+                                  → {recipient._id === user?._id ? 'You' : recipient.name}
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="text-[10px] font-bold text-indigo-600 group-hover:underline">
+                              Details →
+                            </span>
+                          </div>
+
+                          {/* Split Type Badge & Per-Person Breakdown */}
+                          {isExpense && (() => {
+                            const effectiveSplits = (tx.splits && tx.splits.length > 0)
+                              ? tx.splits
+                              : (tx.sharedBy && tx.sharedBy.length > 0)
+                                ? tx.sharedBy.map(u => ({ user: u, amount: tx.amount / tx.sharedBy.length }))
+                                : (currentTrip.members || []).map(m => ({ user: m.user, amount: tx.amount / (currentTrip.members?.length || 1) }));
+
+                            const splitCount = effectiveSplits.length;
+                            const payerUid = (payer?._id || payer)?.toString();
+                            const isSelfExpense = tx.splitType === 'self' || (splitCount === 1 && (effectiveSplits[0]?.user?._id || effectiveSplits[0]?.user)?.toString() === payerUid);
+                            const isCommon = !isSelfExpense && (tx.splitType === 'all' || !tx.splitType);
+                            const isCustom = !isSelfExpense && tx.splitType === 'custom';
+                            const isIndividual = !isSelfExpense && tx.splitType === 'individual';
+                            const perPersonEqual = tx.amount / Math.max(1, splitCount);
+
+                            return (
+                              <div className="mt-1 pt-2 border-t border-slate-200/60">
+                                <div className="flex items-center justify-between mb-1.5 text-[10px]">
+                                  <span className="font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                    {isSelfExpense && <span className="text-purple-700 font-extrabold">👤 Personal Expense (No Split)</span>}
+                                    {isCommon && `👥 Split equally (${currency}${perPersonEqual.toFixed(2)} / each)`}
+                                    {isCustom && `✨ Custom split (${splitCount} members)`}
+                                    {isIndividual && `🎯 1-on-1 split`}
+                                  </span>
+                                  <span className="font-semibold text-slate-400">
+                                    {isSelfExpense ? 'No debts created' : `${splitCount} ${splitCount === 1 ? 'person' : 'people'}`}
+                                  </span>
+                                </div>
+
+                                {/* Member Share Chips */}
+                                <div className="flex flex-wrap gap-1.5">
+                                  {isSelfExpense ? (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-purple-50 border border-purple-200 text-purple-900 shadow-sm">
+                                      <span>{isPaidByMe ? 'You (100%)' : `${payer?.name || 'Payer'} (100%)`}:</span>
+                                      <span className="font-extrabold font-heading text-purple-700">
+                                        {currency}{Number(tx.amount).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    effectiveSplits.map((s, idx) => {
+                                      const sUser = s.user || s;
+                                      const sUserId = (sUser?._id || sUser)?.toString();
+                                      const isSelfShare = sUserId === user?._id?.toString();
+                                      const sName = isSelfShare ? 'You' : (sUser?.name || 'Member');
+                                      const sAmount = s.amount !== undefined ? s.amount : perPersonEqual;
+
+                                      return (
+                                        <div 
+                                          key={sUserId || idx}
+                                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all ${
+                                            isSelfShare 
+                                              ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm' 
+                                              : 'bg-white border-slate-200/80 text-slate-700'
+                                          }`}
+                                        >
+                                          <span className="truncate max-w-[85px]">{sName}:</span>
+                                          <span className="font-extrabold font-heading text-rose-600">
+                                            {currency}{Number(sAmount).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 

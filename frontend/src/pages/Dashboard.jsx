@@ -98,6 +98,7 @@ export default function Dashboard() {
     deleteTrip,
     leaveTrip,
     updateTrip,
+    closeTrip,
     createFundRequest, 
     respondToFundRequest, 
     cancelFundRequest, 
@@ -108,6 +109,10 @@ export default function Dashboard() {
   const [settleTarget, setSettleTarget] = useState(null); // { user, amount, status }
   const [settleAmount, setSettleAmount] = useState('');
   const [isSettling, setIsSettling] = useState(false);
+
+  // Settle & Close Vault Wizard Modal State
+  const [showSettleWizard, setShowSettleWizard] = useState(false);
+  const [isClosingVault, setIsClosingVault] = useState(false);
 
   // Ask Funds Modal State
   const [showAskModal, setShowAskModal] = useState(false);
@@ -184,6 +189,8 @@ export default function Dashboard() {
   const members = currentTrip?.members || [];
   const myData = members.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
   const isAdmin = myData?.role === 'admin';
+  const isViewer = myData?.role === 'viewer';
+  const isClosed = !!currentTrip?.isClosed;
   const currency = currentTrip?.currency || '₹';
   const tripIcon = getTripIcon(currentTrip?.name);
 
@@ -197,6 +204,54 @@ export default function Dashboard() {
     () => computeBilateralDebts(members, transactions, user?._id),
     [members, transactions, user?._id]
   );
+
+  // Memoized End-of-Trip Minimal Debt Settlements (Who pays whom)
+  const minimalSettlements = useMemo(() => {
+    const creditors = [];
+    const debtors = [];
+
+    members.forEach((m) => {
+      const u = m.user || m;
+      const balance = Math.round((m.balance || 0) * 100) / 100;
+      if (balance > 0.01) {
+        creditors.push({ user: u, amount: balance });
+      } else if (balance < -0.01) {
+        debtors.push({ user: u, amount: Math.abs(balance) });
+      }
+    });
+
+    creditors.sort((a, b) => b.amount - a.amount);
+    debtors.sort((a, b) => b.amount - a.amount);
+
+    const settlements = [];
+    let cIdx = 0;
+    let dIdx = 0;
+
+    const cList = creditors.map(c => ({ ...c }));
+    const dList = debtors.map(d => ({ ...d }));
+
+    while (cIdx < cList.length && dIdx < dList.length) {
+      const creditor = cList[cIdx];
+      const debtor = dList[dIdx];
+      const settlementAmount = Math.min(creditor.amount, debtor.amount);
+
+      if (settlementAmount > 0.01) {
+        settlements.push({
+          from: debtor.user,
+          to: creditor.user,
+          amount: Math.round(settlementAmount * 100) / 100,
+        });
+      }
+
+      creditor.amount -= settlementAmount;
+      debtor.amount -= settlementAmount;
+
+      if (creditor.amount < 0.01) cIdx++;
+      if (debtor.amount < 0.01) dIdx++;
+    }
+
+    return settlements;
+  }, [members]);
 
   // Memoized Action-Required Requests (where user must act: fund, confirm receipt, or verify settlement)
   const actionRequiredRequests = useMemo(() => {
@@ -542,6 +597,21 @@ export default function Dashboard() {
     }
   };
 
+  // Handle End-of-Trip Settle & Close Vault
+  const handleCloseVault = async (reopen = false) => {
+    try {
+      setIsClosingVault(true);
+      await closeTrip(id, reopen);
+      toast.success(reopen ? 'Trip vault reopened for logging! 🔓' : 'Trip vault closed & all balances finalized! 🔒');
+      setShowSettleWizard(false);
+      setShowSettingsModal(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update vault status.');
+    } finally {
+      setIsClosingVault(false);
+    }
+  };
+
   // Export handlers
   const handleExportCSV = () => {
     try {
@@ -578,18 +648,51 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="p-3 sm:p-6 md:p-8 lg:p-10 pb-24 sm:pb-20">
+    <div className="p-3 sm:p-6 md:p-8 lg:p-10 pb-24 sm:pb-20 max-w-7xl mx-auto animate-in fade-in duration-200">
       
+      {/* ========================================================================= */}
+      {/* CLOSED VAULT / VIEWER MODE BANNERS                                        */}
+      {/* ========================================================================= */}
+      {isClosed && (
+        <div className="mb-5 p-4 rounded-3xl bg-slate-900 text-white border border-slate-700 flex items-center justify-between gap-3 shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center text-lg shrink-0">
+              🔒
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs sm:text-sm font-black truncate">Trip Vault Closed & Archived</h4>
+              <p className="text-[11px] text-slate-400 font-medium truncate">All expenses, debts, and settlements are finalized.</p>
+            </div>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => handleCloseVault(true)}
+              disabled={isClosingVault}
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl active:scale-95 transition-all shrink-0 border border-white/10"
+            >
+              Reopen Vault
+            </button>
+          )}
+        </div>
+      )}
+
+      {isViewer && !isClosed && (
+        <div className="mb-5 p-3.5 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center gap-2.5 text-xs text-indigo-900 animate-in fade-in">
+          <span className="text-sm">👁️</span>
+          <span className="font-semibold">You are viewing this trip in <strong>Read-Only</strong> mode.</span>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 1. TOP RESPONSIVE HEADER                                                  */}
       {/* ========================================================================= */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="min-w-0 flex-1">
-          {/* Breadcrumb back navigation */}
+          {/* Breadcrumb & Roles */}
           <div className="flex items-center gap-2 mb-1.5">
             <button
               onClick={() => navigate('/')}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 active:scale-95 transition-all bg-white px-3 py-1.5 rounded-xl border border-slate-200/80 shadow-xs"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 active:scale-95 transition-all bg-white px-3 py-1.5 rounded-xl border border-slate-200/80 shadow-2xs"
             >
               <ArrowLeft size={13} />
               <span>All Trips</span>
@@ -599,6 +702,10 @@ export default function Dashboard() {
               <span className="bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[10px] font-black px-2 py-1 rounded-xl flex items-center gap-1">
                 <Crown size={11} className="fill-indigo-600" />
                 <span>ORGANIZER</span>
+              </span>
+            ) : isViewer ? (
+              <span className="bg-amber-50 text-amber-700 border border-amber-200/80 text-[10px] font-black px-2 py-1 rounded-xl">
+                READ-ONLY VIEWER
               </span>
             ) : (
               <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-xl">
@@ -619,46 +726,57 @@ export default function Dashboard() {
             <span className="text-slate-300 hidden xs:inline">•</span>
             <span>Your Share: <strong className="text-indigo-600 font-bold">{currency}{myTotalShare.toFixed(2)}</strong></span>
             <span className="text-slate-300 hidden sm:inline">•</span>
-            <span className="text-slate-400 hidden sm:inline">{totalTransactionsCount} {totalTransactionsCount === 1 ? 'activity' : 'activities'}</span>
+            <span className="text-slate-400 hidden sm:inline">{totalTransactionsCount} activities</span>
           </p>
         </div>
 
         {/* Action Controls Suite */}
-        <div className="flex items-center gap-2 sm:gap-2.5 self-end sm:self-auto shrink-0">
+        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+          {/* End of trip Settle Wizard button */}
+          <button
+            type="button"
+            onClick={() => setShowSettleWizard(true)}
+            className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 px-3.5 py-2.5 rounded-2xl text-xs font-black shadow-2xs active:scale-95 transition-all"
+            title="End-of-Trip Settle Wizard"
+          >
+            <CheckCircle2 size={16} className="text-emerald-600" />
+            <span className="hidden xs:inline">Settle Wizard</span>
+          </button>
+
           {/* Requests & Notifications Hub Bell */}
           <button
             type="button"
             onClick={() => setShowRequestsModal(true)}
-            className="relative w-11 h-11 rounded-2xl bg-white text-slate-700 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-sm flex items-center justify-center active:scale-90 transition-all"
+            className="relative w-11 h-11 rounded-2xl bg-white text-slate-700 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-2xs flex items-center justify-center active:scale-90 transition-all"
             title={actionRequiredRequests.length > 0 ? `${actionRequiredRequests.length} action(s) required` : 'Requests & Notifications Hub'}
           >
-            <Bell size={20} className={actionRequiredRequests.length > 0 ? 'text-indigo-600' : 'text-slate-600'} />
+            <Bell size={19} className={actionRequiredRequests.length > 0 ? 'text-indigo-600' : 'text-slate-600'} />
             {actionRequiredRequests.length > 0 ? (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-5 px-1 bg-rose-600 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-md animate-pulse">
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-rose-600 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-md animate-pulse">
                 {actionRequiredRequests.length}
               </span>
             ) : waitingRequests.length > 0 ? (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 border-2 border-white rounded-full"></span>
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 border-2 border-white rounded-full"></span>
             ) : null}
           </button>
 
           <button
             type="button"
             onClick={() => setShowShareModal(true)}
-            className="w-11 h-11 rounded-2xl bg-white text-indigo-600 border border-slate-200/90 hover:border-indigo-300 hover:bg-indigo-50/50 shadow-sm flex items-center justify-center active:scale-90 transition-all"
+            className="w-11 h-11 rounded-2xl bg-white text-indigo-600 border border-slate-200/90 hover:border-indigo-300 hover:bg-indigo-50/50 shadow-2xs flex items-center justify-center active:scale-90 transition-all"
             title="Share Trip Vault / Invite Friends"
           >
-            <Share2 size={18} />
+            <Share2 size={17} />
           </button>
 
           <button
             type="button"
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className="w-11 h-11 rounded-2xl bg-white text-slate-600 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-sm flex items-center justify-center active:scale-90 transition-all disabled:opacity-50"
+            className="w-11 h-11 rounded-2xl bg-white text-slate-600 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-2xs flex items-center justify-center active:scale-90 transition-all disabled:opacity-50"
             title="Sync Live Passbook"
           >
-            <RefreshCw size={18} className={isRefreshing ? 'animate-spin text-indigo-600' : ''} />
+            <RefreshCw size={17} className={isRefreshing ? 'animate-spin text-indigo-600' : ''} />
           </button>
 
           <button
@@ -669,36 +787,38 @@ export default function Dashboard() {
               setEditTripCurrency(currentTrip?.currency || '₹');
               setShowSettingsModal(true);
             }}
-            className="w-11 h-11 rounded-2xl bg-white text-slate-700 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-sm flex items-center justify-center active:scale-90 transition-all"
+            className="w-11 h-11 rounded-2xl bg-white text-slate-700 border border-slate-200/90 hover:border-indigo-300 hover:text-indigo-600 shadow-2xs flex items-center justify-center active:scale-90 transition-all"
             title="Trip Settings & Vault Options"
           >
-            <SlidersHorizontal size={18} />
+            <SlidersHorizontal size={17} />
           </button>
 
           <button 
             onClick={() => navigate('/profile')} 
-            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white flex items-center justify-center font-black text-base overflow-hidden shadow-lg shadow-indigo-500/25 active:scale-95 transition-transform border-2 border-white"
+            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white flex items-center justify-center font-black text-base overflow-hidden shadow-md shadow-indigo-500/20 active:scale-95 transition-transform border-2 border-white"
             title="My Profile"
           >
             {user?.avatar ? (
               <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
             ) : (
-              user?.name ? user.name.charAt(0).toUpperCase() : <User size={20} />
+              user?.name ? user.name.charAt(0).toUpperCase() : <User size={18} />
             )}
           </button>
         </div>
       </header>
 
       {/* ========================================================================= */}
-      {/* 2. TOP HERO & QUICK ACTIONS GRID                                          */}
+      {/* 2. RESPONSIVE MULTI-COLUMN WORKSPACE (MOBILE STREAMLINED + DESKTOP DUAL)  */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 mb-8">
         
-        {/* Left Column (Hero Net Position + Budget Tracker) */}
+        {/* ======================================================================= */}
+        {/* LEFT COLUMN: HERO CARD + PERSONAL PASSBOOK + RECENT ACTIVITY            */}
+        {/* ======================================================================= */}
         <div className="lg:col-span-7 flex flex-col gap-5 sm:gap-6">
           
           {/* HERO PASSBOOK CARD (Personal Net Position) */}
-          <div className={`relative overflow-hidden p-6 sm:p-8 rounded-[2.5rem] shadow-2xl text-white transition-all ${
+          <div className={`relative overflow-hidden p-6 sm:p-7 rounded-[2.5rem] shadow-2xl text-white transition-all ${
             netPosition > 0.01 
               ? 'bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-900 shadow-emerald-600/20' 
               : netPosition < -0.01
@@ -710,7 +830,7 @@ export default function Dashboard() {
             
             <div className="relative z-10 flex justify-between items-center mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white/50 bg-white/20 flex items-center justify-center text-xs font-black shrink-0">
+                <div className="w-7 h-7 rounded-full overflow-hidden border-2 border-white/50 bg-white/20 flex items-center justify-center text-xs font-black shrink-0">
                   {user?.avatar ? (
                     <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
                   ) : (
@@ -720,8 +840,8 @@ export default function Dashboard() {
                 <p className="text-white/80 font-bold tracking-wider text-xs uppercase">Your Net Balance</p>
               </div>
 
-              <div className="bg-white/15 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-bold border border-white/20 flex items-center gap-1.5 shadow-xs">
-                <Sparkles size={13} className="text-amber-300" />
+              <div className="bg-white/15 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-bold border border-white/20 flex items-center gap-1.5 shadow-2xs">
+                <Sparkles size={12} className="text-amber-300" />
                 <span>Live Passbook</span>
               </div>
             </div>
@@ -731,389 +851,108 @@ export default function Dashboard() {
                 {currency}{Math.abs(netPosition).toFixed(2)}
               </h2>
               
-              <div className="mt-3 flex items-center gap-2">
-                <div className="bg-white/15 border border-white/20 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md">
+              <div className="mt-2.5 flex items-center gap-2">
+                <div className="bg-white/15 border border-white/20 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold backdrop-blur-md">
                   {netPosition > 0.01 ? (
-                    <span className="flex items-center gap-1.5 text-emerald-200">🎉 You are owed overall</span>
+                    <span className="flex items-center gap-1 text-emerald-200">🎉 You are owed overall</span>
                   ) : netPosition < -0.01 ? (
-                    <span className="flex items-center gap-1.5 text-rose-200">💸 You owe overall</span>
+                    <span className="flex items-center gap-1 text-rose-200">💸 You owe overall</span>
                   ) : (
-                    <span className="flex items-center gap-1.5 text-teal-200">✨ All settled up!</span>
+                    <span className="flex items-center gap-1 text-teal-200">✨ All settled up!</span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Mini Balance Summary inside Card */}
-            <div className="relative z-10 grid grid-cols-2 gap-3 mt-6 pt-5 border-t border-white/15 text-xs">
-              <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-3.5 flex flex-col border border-white/10">
+            {/* Mini Balance Summary */}
+            <div className="relative z-10 grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-white/15 text-xs">
+              <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-3 flex flex-col border border-white/10">
                 <span className="text-[10px] text-white/70 font-bold uppercase tracking-wider">Owed to You</span>
-                <span className="font-black text-emerald-300 text-lg sm:text-xl font-heading mt-0.5">
+                <span className="font-black text-emerald-300 text-base sm:text-lg font-heading mt-0.5">
                   {currency}{totalYouAreOwed.toFixed(2)}
                 </span>
               </div>
-              <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-3.5 flex flex-col border border-white/10">
+              <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-3 flex flex-col border border-white/10">
                 <span className="text-[10px] text-white/70 font-bold uppercase tracking-wider">You Owe</span>
-                <span className="font-black text-rose-300 text-lg sm:text-xl font-heading mt-0.5">
+                <span className="font-black text-rose-300 text-base sm:text-lg font-heading mt-0.5">
                   {currency}{totalYouOwe.toFixed(2)}
                 </span>
               </div>
             </div>
 
-            {/* Ask Companion Shortcut Prompt */}
-            <div className="relative z-10 mt-4 pt-3 border-t border-white/10 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowAskModal(true)}
-                className="w-full py-2.5 px-3.5 bg-white/15 hover:bg-white/25 active:scale-[0.99] text-white font-bold text-xs rounded-xl backdrop-blur-md transition-all flex items-center justify-center gap-2 shadow-sm border border-white/15"
-              >
-                <HelpCircle size={15} className="text-amber-300" />
-                <span>Low on cash? Request companion to cover you</span>
-              </button>
+            {/* ONE PRIMARY ACTION BUTTON + ASK COVER SHORTCUT */}
+            <div className="relative z-10 mt-5 pt-3 border-t border-white/15 flex flex-col sm:flex-row gap-2.5">
+              {!isViewer && !isClosed ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/trip/${id}/add-money`)}
+                  className="flex-1 py-3.5 px-4 bg-white text-slate-900 hover:bg-slate-50 font-black text-xs sm:text-sm rounded-2xl shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+                >
+                  <Plus size={18} strokeWidth={3} className="text-indigo-600 group-hover:rotate-90 transition-transform" />
+                  <span>+ Add Spend / Settle Up</span>
+                </button>
+              ) : isClosed ? (
+                <div className="flex-1 py-3 px-4 bg-white/10 text-white/70 font-bold text-xs rounded-2xl text-center border border-white/10">
+                  🔒 Vault is settled & closed
+                </div>
+              ) : null}
+
+              {!isViewer && !isClosed && (
+                <button
+                  type="button"
+                  onClick={() => setShowAskModal(true)}
+                  className="py-3 px-4 bg-white/15 hover:bg-white/25 active:scale-[0.98] text-white font-bold text-xs rounded-2xl backdrop-blur-md transition-all flex items-center justify-center gap-1.5 border border-white/15"
+                  title="Ask companion to cover an expense"
+                >
+                  <HelpCircle size={14} className="text-amber-300" />
+                  <span>Ask Cover</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* TRIP BUDGET TRACKER CARD */}
-          <div className="bg-white border border-slate-200/80 rounded-[2.5rem] p-6 shadow-sm">
-            <div className="flex justify-between items-center mb-3.5">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
-                  <Target size={20} />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 uppercase tracking-wider">Trip Budget Target</h3>
-                  <p className="text-[10px] sm:text-xs text-slate-400 font-semibold">Real-time spend meter</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowBudgetModal(true)}
-                className="px-3.5 py-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-xl flex items-center gap-1 active:scale-95 transition-all shadow-xs"
-              >
-                <Edit3 size={13} />
-                <span>{budget > 0 ? 'Edit Limit' : '+ Set Target'}</span>
-              </button>
-            </div>
-
-            {budget > 0 ? (
-              <div>
-                <div className="flex justify-between items-baseline mb-2">
-                  <div>
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900 font-heading">
-                      {currency}{totalTripSpend.toFixed(2)}
-                    </span>
-                    <span className="text-xs sm:text-sm text-slate-400 font-semibold ml-1.5">
-                      / {currency}{budget.toLocaleString()}
-                    </span>
-                  </div>
-                  <span className={`text-xs font-black px-3 py-1 rounded-full ${
-                    isOverBudget 
-                      ? 'bg-rose-100 text-rose-700' 
-                      : budgetPercentage >= 75 
-                        ? 'bg-amber-100 text-amber-800' 
-                        : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    {isOverBudget ? `⚠️ Over by ${currency}${Math.abs(budgetRemaining).toFixed(0)}` : `${budgetPercentage}% used`}
-                  </span>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60 shadow-inner">
-                  <div 
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      isOverBudget 
-                        ? 'bg-gradient-to-r from-rose-500 to-red-600' 
-                        : budgetPercentage >= 75 
-                          ? 'bg-gradient-to-r from-amber-400 to-orange-500' 
-                          : 'bg-gradient-to-r from-indigo-500 to-purple-600'
-                    }`}
-                    style={{ width: `${Math.min(100, Math.max(2, budgetPercentage))}%` }}
-                  ></div>
-                </div>
-
-                <div className="flex justify-between items-center mt-2.5 text-xs font-semibold text-slate-400">
-                  <span>{currency}{(totalTripSpend).toFixed(0)} spent</span>
-                  <span>{isOverBudget ? '0.00' : `${currency}${budgetRemaining?.toFixed(0)}`} remaining</span>
-                </div>
-              </div>
-            ) : (
-              <div 
-                onClick={() => setShowBudgetModal(true)}
-                className="border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-2xl p-5 text-center cursor-pointer transition-colors group"
-              >
-                <p className="text-xs sm:text-sm font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">
-                  🎯 No spending limit set for this trip
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Set a budget target to monitor group spending in real-time
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Quick Action Grid & Action Banners */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
-          
-          {/* Quick Action Grid (6 high-utility tiles) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-3">
-            <button
-              onClick={() => navigate(`/trip/${id}/add-money`)}
-              className="bg-white border border-slate-200/90 p-4 rounded-2xl flex items-center gap-3 shadow-sm hover:border-indigo-400 hover:shadow-md transition-all active:scale-95 group text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 shadow-xs">
-                <Plus size={20} strokeWidth={2.5} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-slate-900 block truncate">Add Expense</span>
-                <span className="text-[10px] text-slate-400 font-medium truncate block">Split with group</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setShowAskModal(true)}
-              className="bg-amber-50/70 border border-amber-200/90 p-4 rounded-2xl flex items-center gap-3 shadow-sm hover:border-amber-400 hover:shadow-md transition-all active:scale-95 group text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md shadow-amber-500/20 shrink-0">
-                <HelpCircle size={20} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-amber-950 block truncate">Ask Funds</span>
-                <span className="text-[10px] text-amber-700/90 font-medium truncate block">Request cover</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setShowRequestsModal(true)}
-              className="relative bg-white border border-slate-200/90 p-4 rounded-2xl flex items-center gap-3 shadow-sm hover:border-indigo-400 hover:shadow-md transition-all active:scale-95 group text-left"
-            >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 ${
-                actionRequiredRequests.length > 0 
-                  ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20 animate-pulse' 
-                  : 'bg-indigo-50 text-indigo-600'
-              }`}>
-                <Bell size={20} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-xs font-black text-slate-900 block truncate">Requests Hub</span>
-                  {actionRequiredRequests.length > 0 && (
-                    <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full shrink-0">
-                      {actionRequiredRequests.length}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] text-slate-400 font-medium truncate block">
-                  {actionRequiredRequests.length > 0 ? `${actionRequiredRequests.length} need action` : 'Approvals & logs'}
-                </span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => navigate(`/trip/${id}/add-money?mode=settle`)}
-              className="bg-white border border-slate-200/90 p-4 rounded-2xl flex items-center gap-3 shadow-sm hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 group text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 shadow-xs">
-                <HandCoins size={20} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-slate-900 block truncate">Settle Up</span>
-                <span className="text-[10px] text-slate-400 font-medium truncate block">Clear debts</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => navigate(`/trip/${id}/history`)}
-              className="bg-white border border-slate-200/90 p-4 rounded-2xl flex items-center gap-3 shadow-sm hover:border-purple-400 hover:shadow-md transition-all active:scale-95 group text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 shadow-xs">
-                <History size={20} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-slate-900 block truncate">Timeline</span>
-                <span className="text-[10px] text-slate-400 font-medium truncate block">All activity & logs</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => navigate(`/trip/${id}/add-member`)}
-              className="bg-white border border-slate-200/90 p-4 rounded-2xl flex items-center gap-3 shadow-sm hover:border-indigo-400 hover:shadow-md transition-all active:scale-95 group text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 shadow-xs">
-                <Users size={20} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-slate-900 block truncate">Companions</span>
-                <span className="text-[10px] text-slate-400 font-medium truncate block">{members.length} members</span>
-              </div>
-            </button>
-          </div>
-
-          {/* Action Required Callout Banner */}
-          {actionRequiredRequests.length > 0 && (
-            <div 
-              onClick={() => setShowRequestsModal(true)}
-              className="cursor-pointer bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white p-4 rounded-3xl shadow-xl shadow-indigo-500/20 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 hover:opacity-95 active:scale-[0.99] transition-all group"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-                  <Bell size={20} className="animate-bounce" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="font-black text-xs sm:text-sm truncate">
-                    {actionRequiredRequests.length} {actionRequiredRequests.length === 1 ? 'Action Required' : 'Actions Required'}
-                  </h4>
-                  <p className="text-[11px] text-white/80 font-medium truncate">
-                    Verify transfers or approve companion requests
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 text-xs font-black bg-white/20 hover:bg-white/30 px-3.5 py-2 rounded-xl shrink-0 transition-colors">
-                <span>View</span>
-                <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </div>
-          )}
-
-          {/* Pending Outgoing Tracker Pill */}
-          {actionRequiredRequests.length === 0 && waitingRequests.length > 0 && (
-            <div 
-              onClick={() => setShowRequestsModal(true)}
-              className="cursor-pointer bg-indigo-50/80 border border-indigo-200/80 hover:bg-indigo-100/70 p-3.5 rounded-2xl flex items-center justify-between text-xs text-indigo-900 transition-all active:scale-[0.99]"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm">⏳</span>
-                <span className="font-bold truncate">
-                  {waitingRequests.length} {waitingRequests.length === 1 ? 'outgoing request pending' : 'outgoing requests pending'}
-                </span>
-              </div>
-              <span className="text-[11px] font-bold text-indigo-600 underline shrink-0">
-                Track Status
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 3. MID SECTION: SPEND BY CATEGORY & PERSONAL PASSBOOK                     */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6 mb-8">
-        
-        {/* Left: Spend by Category */}
-        {sortedCategories.length > 0 && (
+          {/* ZERO-SCROLL PERSONAL PASSBOOK (Bilateral Debts with Direct Settle) */}
           <section className="bg-white p-5 sm:p-7 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between gap-2 mb-4">
                 <div>
-                  <h3 className="font-black text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
-                    <PieChart size={17} className="text-indigo-600" />
-                    <span>Spend by Category</span>
+                  <h3 className="font-black text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
+                    <HandCoins size={17} className="text-indigo-600 shrink-0" />
+                    <span>Personal Passbook</span>
                   </h3>
-                  <p className="text-[11px] font-medium text-slate-400">Where the trip vault money went</p>
+                  <p className="text-[10px] sm:text-[11px] font-medium text-slate-400">Direct companion balances</p>
                 </div>
                 <span className="text-xs font-bold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200/60">
-                  {sortedCategories.length} categories
+                  {companionDebts.length} {companionDebts.length === 1 ? 'companion' : 'companions'}
                 </span>
               </div>
 
-              {/* Segmented Proportional Bar */}
-              <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-slate-200/60 mb-5 shadow-inner">
-                {sortedCategories.map((cat) => {
-                  const pct = totalTripSpend > 0 ? (cat.total / totalTripSpend) * 100 : 0;
-                  if (pct < 1) return null;
-                  return (
-                    <div
-                      key={cat.name}
-                      className="h-full rounded-sm transition-all first:rounded-l-full last:rounded-r-full"
-                      style={{ width: `${pct}%`, backgroundColor: cat.color }}
-                      title={`${cat.name}: ${currency}${cat.total.toFixed(2)} (${pct.toFixed(1)}%)`}
-                    ></div>
-                  );
-                })}
-              </div>
+              {companionDebts.length === 0 ? (
+                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 text-center">
+                  <p className="text-xs font-semibold text-slate-400">No companions in this trip yet.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  {companionDebts.map((debt) => {
+                    const compUser = debt.user;
+                    const isYouOwe = debt.status === 'you_owe';
+                    const isOwesYou = debt.status === 'owes_you';
+                    const isSettled = debt.status === 'settled';
 
-              {/* Category Ranked Items Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-3">
-                {sortedCategories.map((cat) => {
-                  const pct = totalTripSpend > 0 ? ((cat.total / totalTripSpend) * 100).toFixed(1) : '0';
-                  return (
-                    <div
-                      key={cat.name}
-                      onClick={() => navigate(`/trip/${id}/history?category=${encodeURIComponent(cat.name)}`)}
-                      className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100 shadow-xs flex flex-col justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 hover:shadow-md active:scale-95 transition-all group"
-                      title={`View ${cat.name} expenses in History`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
-                        <span className="text-[10px] font-black text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-full shadow-xs">
-                          {pct}%
-                        </span>
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-[11px] font-bold text-slate-700 truncate group-hover:text-indigo-600 transition-colors">{cat.name}</p>
-                          <ChevronRight size={12} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                        </div>
-                        <p className="text-xs font-black text-slate-900 mt-0.5 font-heading">
-                          {currency}{cat.total.toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Right: Personal Passbook (Direct Companion Debts) */}
-        <section className="bg-white p-5 sm:p-7 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div className="min-w-0">
-                <h3 className="font-black text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
-                  <HandCoins size={17} className="text-indigo-600 shrink-0" />
-                  <span>Personal Passbook</span>
-                </h3>
-                <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">Direct companion balances (0 debt on self expenses)</p>
-              </div>
-              <button 
-                onClick={() => setShowAskModal(true)}
-                className="text-[11px] sm:text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-100/80 hover:bg-amber-100 border border-amber-300/80 px-3 py-1.5 rounded-xl flex items-center gap-1 shadow-xs active:scale-95 transition-all shrink-0"
-              >
-                <HelpCircle size={13} />
-                <span>Ask Funds</span>
-              </button>
-            </div>
-
-            {companionDebts.length === 0 ? (
-              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 text-center">
-                <p className="text-xs font-semibold text-slate-400">No companions added to this trip yet.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2.5 sm:gap-3">
-                {companionDebts.map((debt) => {
-                  const compUser = debt.user;
-                  const isYouOwe = debt.status === 'you_owe';
-                  const isOwesYou = debt.status === 'owes_you';
-                  const isSettled = debt.status === 'settled';
-
-                  return (
-                    <div 
-                      key={compUser?._id || compUser} 
-                      className={`p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border transition-all ${
-                        isYouOwe 
-                          ? 'border-rose-200/80 bg-rose-50/40 hover:border-rose-300' 
-                          : isOwesYou 
-                            ? 'border-emerald-200/80 bg-emerald-50/40 hover:border-emerald-300' 
-                            : 'border-slate-200/80 bg-slate-50/70 hover:border-slate-300'
-                      }`}
-                    >
-                      {/* Avatar, Name & Live Debt Status */}
-                      <div className="flex items-center justify-between sm:justify-start gap-2.5 sm:gap-3 min-w-0">
-                        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white border-2 border-white shadow-xs flex items-center justify-center text-xs font-black overflow-hidden shrink-0">
+                    return (
+                      <div 
+                        key={compUser?._id || compUser} 
+                        className={`p-3.5 rounded-2xl flex items-center justify-between gap-3 border transition-all ${
+                          isYouOwe 
+                            ? 'border-rose-200/80 bg-rose-50/40 hover:border-rose-300' 
+                            : isOwesYou 
+                              ? 'border-emerald-200/80 bg-emerald-50/40 hover:border-emerald-300' 
+                              : 'border-slate-200/80 bg-slate-50/70 hover:border-slate-300'
+                        }`}
+                      >
+                        {/* Companion Avatar & Debt Status */}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white border-2 border-white shadow-2xs flex items-center justify-center text-xs font-black overflow-hidden shrink-0">
                             {compUser?.avatar ? (
                               <img src={compUser.avatar} alt={compUser.name} className="w-full h-full object-cover" />
                             ) : (
@@ -1121,11 +960,10 @@ export default function Dashboard() {
                             )}
                           </div>
                           <div className="min-w-0">
-                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate max-w-[140px] sm:max-w-[180px]">
+                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">
                               {compUser?.name}
                             </p>
                             
-                            {/* Subtitle / Debt status */}
                             {isOwesYou && (
                               <p className="text-[11px] sm:text-xs font-extrabold text-emerald-600 flex items-center gap-1">
                                 <span>Owes you</span>
@@ -1149,306 +987,406 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        {/* Mobile-only compact balance indicator */}
-                        <div className="sm:hidden text-right shrink-0">
-                          {isOwesYou && (
-                            <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-lg">
-                              +{currency}{debt.amount.toFixed(2)}
-                            </span>
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isYouOwe && !isViewer && !isClosed && (
+                            <button
+                              onClick={() => handleOpenSettleModal(debt)}
+                              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs shadow-md shadow-rose-600/20 active:scale-95 transition-all flex items-center gap-1"
+                            >
+                              <span>Settle</span>
+                              <ArrowRight size={13} />
+                            </button>
                           )}
-                          {isYouOwe && (
-                            <span className="text-[11px] font-black text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded-lg">
-                              -{currency}{debt.amount.toFixed(2)}
-                            </span>
+
+                          {isOwesYou && !isViewer && !isClosed && (
+                            <button
+                              onClick={() => handleOpenSettleModal(debt)}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all flex items-center gap-1"
+                            >
+                              <Send size={12} />
+                              <span>Remind</span>
+                            </button>
                           )}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
 
-                      {/* Actions Buttons Row */}
-                      <div className="flex items-center gap-1.5 shrink-0 pt-2 sm:pt-0 border-t border-slate-200/50 sm:border-t-0">
-                        <button
-                          onClick={() => { setAskTargetUser((compUser?._id || compUser)?.toString()); setShowAskModal(true); }}
-                          className="flex-1 sm:flex-initial px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-[11px] sm:text-xs font-bold active:scale-95 transition-all flex items-center justify-center gap-1 shadow-2xs"
-                          title={`Ask ${compUser?.name} for funds`}
-                        >
-                          <HelpCircle size={13} />
-                          <span>Ask {currency}</span>
-                        </button>
+          {/* RECENT ACTIVITY FEED */}
+          <section className="bg-white p-5 sm:p-7 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-black text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
+                    <Receipt size={17} className="text-indigo-600" />
+                    <span>Recent Activity</span>
+                  </h3>
+                  <p className="text-[11px] font-medium text-slate-400">Tap to inspect receipt & breakdown</p>
+                </div>
+                <button 
+                  onClick={() => navigate(`/trip/${id}/history`)}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 active:scale-95 transition-all bg-indigo-50 px-3 py-1.5 rounded-xl"
+                >
+                  <span>All Logs</span>
+                  <ChevronRight size={13} />
+                </button>
+              </div>
 
-                        {isYouOwe && (
-                          <button
-                            onClick={() => handleOpenSettleModal(debt)}
-                            className="flex-1 sm:flex-initial px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-[11px] sm:text-xs shadow-md shadow-rose-600/20 active:scale-95 transition-all flex items-center justify-center gap-1"
+              {transactions.length === 0 ? (
+                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 text-center">
+                  <p className="text-xs font-semibold text-slate-400 mb-2">No expenses logged yet.</p>
+                  {!isViewer && !isClosed && (
+                    <button
+                      onClick={() => navigate(`/trip/${id}/add-money`)}
+                      className="px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all"
+                    >
+                      + Log First Spend
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {recentTransactions.map((tx) => {
+                    const isSettlement = tx.type === 'settlement';
+                    const isPayer = (tx.payer?._id || tx.payer || tx.paidBy?._id || tx.paidBy || tx.createdBy?._id || tx.createdBy)?.toString() === user?._id?.toString();
+                    const payerName = isPayer ? 'You' : (tx.payer?.name || tx.paidBy?.name || tx.createdBy?.name || 'Companion');
+                    const mySplit = tx.splits?.find(s => (s.user?._id || s.user)?.toString() === user?._id?.toString());
+                    const myShare = mySplit ? (mySplit.amount || 0) : computeUserShare(tx, user?._id, members);
+                    const isPersonal = tx.splitType === 'self' || (tx.splits?.length === 1 && (tx.splits[0]?.user?._id || tx.splits[0]?.user)?.toString() === (tx.payer?._id || tx.payer)?.toString());
+                    const catMeta = getCategoryMeta(tx.category || (isSettlement ? 'Settlement' : 'Other'), id);
+                    const catColor = catMeta.hex || catMeta.theme?.hex || '#6366f1';
+                    const catEmoji = catMeta.emoji || '🏷️';
+
+                    return (
+                      <div
+                        key={tx._id}
+                        onClick={() => setSelectedTx(tx)}
+                        className="bg-slate-50/80 hover:bg-indigo-50/40 p-3 rounded-2xl flex items-center justify-between gap-3 border border-slate-100 hover:border-indigo-200 cursor-pointer active:scale-[0.99] transition-all group"
+                        title="Tap to view details & receipt"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div 
+                            className="w-9 h-9 rounded-2xl flex items-center justify-center text-base shrink-0 shadow-2xs"
+                            style={{ backgroundColor: `${catColor}20` }}
                           >
-                            <span>Settle</span>
-                            <ArrowRight size={13} />
-                          </button>
-                        )}
+                            <span>{catEmoji}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-xs sm:text-sm text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+                                {tx.description}
+                              </p>
+                              {tx.receipt && (
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 shrink-0">
+                                  🧾 Receipt
+                                </span>
+                              )}
+                              {isSettlement && (
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 shrink-0">
+                                  Settle
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                              {payerName} paid • {formatDate(tx.date || tx.createdAt)}
+                            </p>
+                          </div>
+                        </div>
 
-                        {isOwesYou && (
-                          <button
-                            onClick={() => handleOpenSettleModal(debt)}
-                            className="flex-1 sm:flex-initial px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[11px] sm:text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-1"
-                          >
-                            <Send size={13} />
-                            <span>Request</span>
-                          </button>
-                        )}
+                        <div className="text-right shrink-0">
+                          <p className="font-black text-xs sm:text-sm text-slate-900 font-heading">
+                            {currency}{tx.amount.toFixed(2)}
+                          </p>
+                          {!isSettlement && (
+                            <p className={`text-[10px] font-bold mt-0.5 ${
+                              isPersonal 
+                                ? 'text-purple-600' 
+                                : isPayer 
+                                  ? 'text-emerald-600' 
+                                  : (myShare > 0 ? 'text-rose-600' : 'text-slate-400')
+                            }`}>
+                              {isPersonal 
+                                ? 'Personal' 
+                                : isPayer 
+                                  ? `+${currency}${(tx.amount - myShare).toFixed(0)} lent` 
+                                  : (myShare > 0 ? `-${currency}${myShare.toFixed(0)}` : '0')}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* RIGHT COLUMN: BUDGET + CATEGORY BREAKDOWN + COMPANIONS LEADERBOARD       */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-5 flex flex-col gap-5 sm:gap-6">
+          
+          {/* TRIP BUDGET TRACKER CARD */}
+          <div className="bg-white border border-slate-200/80 rounded-[2.5rem] p-6 shadow-sm">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                  <Target size={18} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 uppercase tracking-wider">Trip Budget Target</h3>
+                  <p className="text-[10px] text-slate-400 font-semibold">Real-time spend meter</p>
+                </div>
+              </div>
+
+              {!isViewer && (
+                <button
+                  onClick={() => setShowBudgetModal(true)}
+                  className="px-3 py-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-xl flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+                >
+                  <Edit3 size={12} />
+                  <span>{budget > 0 ? 'Edit' : '+ Set'}</span>
+                </button>
+              )}
+            </div>
+
+            {budget > 0 ? (
+              <div>
+                <div className="flex justify-between items-baseline mb-2">
+                  <div>
+                    <span className="text-2xl sm:text-3xl font-black text-slate-900 font-heading">
+                      {currency}{totalTripSpend.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-slate-400 font-semibold ml-1.5">
+                      / {currency}{budget.toLocaleString()}
+                    </span>
+                  </div>
+                  <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${
+                    isOverBudget 
+                      ? 'bg-rose-100 text-rose-700' 
+                      : budgetPercentage >= 75 
+                        ? 'bg-amber-100 text-amber-800' 
+                        : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {isOverBudget ? `⚠️ Over by ${currency}${Math.abs(budgetRemaining).toFixed(0)}` : `${budgetPercentage}% used`}
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60 shadow-inner">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isOverBudget 
+                        ? 'bg-gradient-to-r from-rose-500 to-red-600' 
+                        : budgetPercentage >= 75 
+                          ? 'bg-gradient-to-r from-amber-400 to-orange-500' 
+                          : 'bg-gradient-to-r from-indigo-500 to-purple-600'
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(2, budgetPercentage))}%` }}
+                  ></div>
+                </div>
+
+                <div className="flex justify-between items-center mt-2 text-xs font-semibold text-slate-400">
+                  <span>{currency}{(totalTripSpend).toFixed(0)} spent</span>
+                  <span>{isOverBudget ? '0.00' : `${currency}${budgetRemaining?.toFixed(0)}`} left</span>
+                </div>
+              </div>
+            ) : (
+              <div 
+                onClick={() => !isViewer && setShowBudgetModal(true)}
+                className="border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-2xl p-4 text-center cursor-pointer transition-colors group"
+              >
+                <p className="text-xs font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">
+                  🎯 No spending target set
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Set a budget to track group expenses
+                </p>
               </div>
             )}
           </div>
-        </section>
-      </div>
 
-      {/* ========================================================================= */}
-      {/* 4. BOTTOM SECTION: RECENT ACTIVITY & GROUP STANDINGS                      */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6 mb-8">
-        
-        {/* Left: Recent Activity Feed */}
-        <section className="bg-white p-5 sm:p-7 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
+          {/* SPEND BY CATEGORY */}
+          {sortedCategories.length > 0 && (
+            <section className="bg-white p-5 sm:p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
               <div>
-                <h3 className="font-black text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
-                  <Receipt size={17} className="text-indigo-600" />
-                  <span>Recent Activity Feed</span>
-                </h3>
-                <p className="text-[11px] font-medium text-slate-400">Tap any item to view split receipt & breakdown</p>
-              </div>
-              <button 
-                onClick={() => navigate(`/trip/${id}/history`)}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 active:scale-95 transition-all bg-indigo-50 px-3 py-1.5 rounded-xl"
-              >
-                <span>All Logs</span>
-                <ChevronRight size={13} />
-              </button>
-            </div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-1.5">
+                      <PieChart size={17} className="text-indigo-600" />
+                      <span>Spend by Category</span>
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/60">
+                    {sortedCategories.length} categories
+                  </span>
+                </div>
 
-            {transactions.length === 0 ? (
-              <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100 text-center">
-                <p className="text-xs font-semibold text-slate-400 mb-2">No activity logged in this vault yet.</p>
-                <button
-                  onClick={() => navigate(`/trip/${id}/add-money`)}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 active:scale-95 transition-all"
+                {/* Segmented Bar */}
+                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-slate-200/60 mb-4 shadow-inner">
+                  {sortedCategories.map((cat) => {
+                    const pct = totalTripSpend > 0 ? (cat.total / totalTripSpend) * 100 : 0;
+                    if (pct < 1) return null;
+                    return (
+                      <div
+                        key={cat.name}
+                        className="h-full rounded-sm transition-all first:rounded-l-full last:rounded-r-full"
+                        style={{ width: `${pct}%`, backgroundColor: cat.color }}
+                        title={`${cat.name}: ${currency}${cat.total.toFixed(2)} (${pct.toFixed(1)}%)`}
+                      ></div>
+                    );
+                  })}
+                </div>
+
+                {/* Category Grid */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {sortedCategories.map((cat) => {
+                    const pct = totalTripSpend > 0 ? ((cat.total / totalTripSpend) * 100).toFixed(0) : '0';
+                    return (
+                      <div
+                        key={cat.name}
+                        onClick={() => navigate(`/trip/${id}/history?category=${encodeURIComponent(cat.name)}`)}
+                        className="bg-slate-50/80 p-3 rounded-2xl border border-slate-100 flex flex-col justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all group"
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-lg">{cat.emoji}</span>
+                          <span className="text-[10px] font-black text-indigo-700 bg-white border border-indigo-100 px-1.5 py-0.2 rounded-full">
+                            {pct}%
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold text-slate-700 truncate">{cat.name}</p>
+                          <p className="text-xs font-black text-slate-900 mt-0.5 font-heading">
+                            {currency}{cat.total.toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* GROUP COMPANIONS & STANDINGS */}
+          <section className="bg-white p-5 sm:p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3.5">
+                <h3 className="font-black text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-2">
+                  <Users size={17} className="text-indigo-600 shrink-0" />
+                  <span>Travel Companions ({members.length})</span>
+                </h3>
+                <button 
+                  onClick={() => setShowShareModal(true)}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-xl active:scale-95 transition-all shrink-0"
                 >
-                  + Log First Expense
+                  + Invite
                 </button>
               </div>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {recentTransactions.map((tx) => {
-                  const isSettlement = tx.type === 'settlement';
-                  const isPayer = (tx.payer?._id || tx.payer || tx.paidBy?._id || tx.paidBy || tx.createdBy?._id || tx.createdBy)?.toString() === user?._id?.toString();
-                  const payerName = isPayer ? 'You' : (tx.payer?.name || tx.paidBy?.name || tx.createdBy?.name || 'Companion');
-                  const mySplit = tx.splits?.find(s => (s.user?._id || s.user)?.toString() === user?._id?.toString());
-                  const myShare = mySplit ? (mySplit.amount || 0) : computeUserShare(tx, user?._id, members);
-                  const isPersonal = tx.splitType === 'self' || (tx.splits?.length === 1 && (tx.splits[0]?.user?._id || tx.splits[0]?.user)?.toString() === (tx.payer?._id || tx.payer)?.toString());
-                  const catMeta = getCategoryMeta(tx.category || (isSettlement ? 'Settlement' : 'Other'), id);
-                  const catColor = catMeta.hex || catMeta.theme?.hex || '#6366f1';
-                  const catEmoji = catMeta.emoji || '🏷️';
+
+              <div className="flex flex-col gap-2">
+                {members.map((member) => {
+                  const isMemberAdmin = member.role === 'admin';
+                  const isMemberViewer = member.role === 'viewer';
+                  const isSelf = (member.user?._id || member.user) === user?._id;
+                  const balance = member.balance || 0;
+                  const mUser = member.user || member;
 
                   return (
-                    <div
-                      key={tx._id}
-                      onClick={() => setSelectedTx(tx)}
-                      className="bg-slate-50/80 hover:bg-indigo-50/40 p-3.5 rounded-2xl flex items-center justify-between gap-3 border border-slate-100 hover:border-indigo-200 cursor-pointer active:scale-[0.99] transition-all group"
-                      title="Tap to view receipt details"
+                    <div 
+                      key={mUser?._id || member._id} 
+                      className="bg-slate-50/80 p-3 rounded-2xl flex items-center justify-between border border-slate-100 hover:border-slate-200 transition-all"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div 
-                          className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 shadow-xs transition-transform group-hover:scale-105"
-                          style={{ backgroundColor: `${catColor}20` }}
-                        >
-                          <span>{catEmoji}</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold overflow-hidden shrink-0 shadow-2xs">
+                          {mUser?.avatar ? (
+                            <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
+                          ) : (
+                            mUser?.name ? mUser.name.charAt(0).toUpperCase() : <User size={15} />
+                          )}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="font-bold text-xs sm:text-sm text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
-                              {tx.description}
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-slate-900 text-xs truncate">
+                              {mUser?.name} {isSelf ? '(You)' : ''}
                             </p>
-                            {isSettlement && (
-                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 shrink-0">
-                                Settle
-                              </span>
+                            {isMemberAdmin && (
+                              <ShieldCheck size={13} className="text-indigo-600 shrink-0" title="Organizer" />
                             )}
-                            {isPersonal && (
-                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 shrink-0">
-                                Personal
+                            {isMemberViewer && (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                                Viewer
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
-                            {payerName} paid • {formatDate(tx.date || tx.createdAt)}
-                          </p>
                         </div>
                       </div>
 
                       <div className="text-right shrink-0">
-                        <p className="font-extrabold text-xs sm:text-sm text-slate-900 font-heading">
-                          {currency}{tx.amount.toFixed(2)}
-                        </p>
-                        {!isSettlement && (
-                          <p className={`text-[10px] font-bold mt-0.5 ${
-                            isPersonal 
-                              ? 'text-purple-600' 
-                              : isPayer 
-                                ? 'text-emerald-600' 
-                                : (myShare > 0 ? 'text-rose-600' : 'text-slate-400')
-                          }`}>
-                            {isPersonal 
-                              ? 'No debt created' 
-                              : isPayer 
-                                ? `You lent ${currency}${(tx.amount - myShare).toFixed(2)}` 
-                                : (myShare > 0 ? `Your share ${currency}${myShare.toFixed(2)}` : 'Not involved')}
-                          </p>
-                        )}
+                        <div className={`font-black text-xs tracking-tight font-heading ${
+                          balance > 0.01 ? 'text-emerald-600' : (balance < -0.01 ? 'text-rose-600' : 'text-slate-400')
+                        }`}>
+                          {balance > 0.01 ? '+' : ''}{currency}{balance.toFixed(2)}
+                        </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-        </section>
 
-        {/* Right: Group Standings Ledger */}
-        <section className="bg-white p-5 sm:p-7 rounded-[2.5rem] border border-slate-200/80 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-xs sm:text-sm text-slate-900 tracking-wider uppercase font-heading flex items-center gap-2">
-                <Users size={17} className="text-indigo-600 shrink-0" />
-                <span>Group Standings ({members.length})</span>
-              </h3>
-              <button 
-                onClick={() => navigate(`/trip/${id}/add-member`)}
-                className="text-[11px] sm:text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl active:scale-95 transition-all shrink-0"
-              >
-                + Add Member
-              </button>
+              {/* End of Trip Wizard Launch Card */}
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowSettleWizard(true)}
+                  className="w-full py-3 px-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 font-extrabold text-xs rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-2xs"
+                >
+                  <CheckCircle2 size={16} className="text-emerald-600" />
+                  <span>End-of-Trip Settle Wizard ➔</span>
+                </button>
+              </div>
             </div>
-
-            <div className="flex flex-col gap-2.5">
-              {members.map((member) => {
-                const isMemberAdmin = member.role === 'admin';
-                const isSelf = (member.user?._id || member.user) === user?._id;
-                const balance = member.balance || 0;
-                const mUser = member.user || member;
-
-                return (
-                  <div 
-                    key={mUser?._id || member._id} 
-                    className="bg-slate-50/80 p-3.5 rounded-2xl flex items-center justify-between border border-slate-100 hover:border-slate-200 transition-all"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold overflow-hidden shrink-0 shadow-xs">
-                        {mUser?.avatar ? (
-                          <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
-                        ) : (
-                          mUser?.name ? mUser.name.charAt(0).toUpperCase() : <User size={16} />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">
-                            {mUser?.name} {isSelf ? '(You)' : ''}
-                          </p>
-                          {isMemberAdmin && (
-                            <ShieldCheck size={13} className="text-indigo-600 shrink-0" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <div className={`font-black text-xs sm:text-sm tracking-tight font-heading ${
-                        balance > 0.01 ? 'text-emerald-600' : (balance < -0.01 ? 'text-rose-600' : 'text-slate-400')
-                      }`}>
-                        {balance > 0.01 ? '+' : ''}{currency}{balance.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 5. EXPORT PASSBOOK & REPORT SUITE                                         */}
-      {/* ========================================================================= */}
-      <section className="mb-8">
-        <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white p-6 sm:p-8 rounded-[2.5rem] shadow-2xl border border-slate-800 relative overflow-hidden">
-          <div className="absolute -right-8 -top-8 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
-          
-          <div className="relative z-10 flex items-center gap-3 mb-4">
-            <div className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10">
-              <Download size={22} className="text-indigo-300" />
-            </div>
-            <div>
-              <h3 className="font-black text-base sm:text-lg text-white uppercase tracking-wider font-heading">
-                Export Passbook & Statements
-              </h3>
-              <p className="text-xs text-slate-400 font-medium">
-                Download spreadsheet reports for Excel/Sheets or print official PDF statements
-              </p>
-            </div>
-          </div>
-
-          <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-            <button
-              onClick={handleExportCSV}
-              className="py-3.5 px-3 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold text-xs rounded-2xl transition-all border border-white/10 flex items-center justify-center gap-2 shadow-sm"
-              title="Download group passbook CSV"
-            >
-              <FileSpreadsheet size={16} className="text-emerald-400" />
-              <span>Group CSV</span>
-            </button>
-
-            <button
-              onClick={handlePrintPDF}
-              className="py-3.5 px-3 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold text-xs rounded-2xl transition-all border border-white/10 flex items-center justify-center gap-2 shadow-sm"
-              title="Print group statement PDF"
-            >
-              <Printer size={16} className="text-indigo-300" />
-              <span>Group PDF</span>
-            </button>
-
-            <button
-              onClick={handleExportPersonalCSV}
-              className="py-3.5 px-3 bg-indigo-600/80 hover:bg-indigo-600 active:scale-95 text-white font-bold text-xs rounded-2xl transition-all border border-indigo-400/30 flex items-center justify-center gap-2 shadow-sm"
-              title="Download personal expenses for tracking & reimbursements"
-            >
-              <UserCheck size={16} className="text-emerald-300" />
-              <span>My Expenses CSV</span>
-            </button>
-
-            <button
-              onClick={handlePrintPersonalPDF}
-              className="py-3.5 px-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-95 active:scale-95 text-white font-bold text-xs rounded-2xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
-              title="Print personal statement PDF"
-            >
-              <Printer size={16} className="text-purple-200" />
-              <span>My Statement PDF</span>
-            </button>
-          </div>
+          </section>
         </div>
-      </section>
+      </div>
 
       {/* ========================================================================= */}
       {/* 6. MODALS SUITE                                                           */}
       {/* ========================================================================= */}
       
-      {/* Quick Settle Modal */}
+      {/* Quick Settle Modal (with UPI Deep Link & 1-Tap Pay) */}
       {settleTarget && (() => {
         const isYouOwe = settleTarget.status === 'you_owe';
         const targetName = settleTarget.user?.name || 'Companion';
         const targetUserId = (settleTarget.user?._id || settleTarget.user)?.toString();
+        const targetUpiId = settleTarget.user?.upiId || (settleTarget.user?.phone ? `${settleTarget.user.phone}@upi` : '');
+        const numAmount = Number(settleAmount) || 0;
+        
+        // UPI deep link
+        const upiPayLink = targetUpiId && numAmount > 0
+          ? `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(targetName)}&am=${numAmount}&cu=INR&tn=${encodeURIComponent('TripVault Settle: ' + currentTrip?.name)}`
+          : '';
+
+        const handleCopyUpi = () => {
+          if (!targetUpiId) {
+            toast.error('No UPI ID found for this companion.');
+            return;
+          }
+          navigator.clipboard.writeText(targetUpiId);
+          toast.success(`Copied UPI ID: ${targetUpiId} 📋`);
+        };
+
+        const handleCopyAmount = () => {
+          if (!numAmount) return;
+          navigator.clipboard.writeText(numAmount.toString());
+          toast.success(`Copied amount: ${currency}${numAmount} 📋`);
+        };
 
         return (
           <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
@@ -1472,9 +1410,9 @@ export default function Dashboard() {
               
               <p className="text-xs text-slate-500 mb-4">
                 {isYouOwe ? (
-                  <>Send settlement payment to <strong>{targetName}</strong>. Once they approve receipt, your debt will be cleared.</>
+                  <>Send payment to <strong>{targetName}</strong> via UPI / Cash, then notify them to clear the debt.</>
                 ) : (
-                  <><strong>{targetName}</strong> owes you <strong>{currency}{settleTarget.amount?.toFixed(2)}</strong>. Send a settlement request asking them to pay you back and settle up.</>
+                  <><strong>{targetName}</strong> owes you <strong>{currency}{settleTarget.amount?.toFixed(2)}</strong>. Send a settlement request asking them to pay you back.</>
                 )}
               </p>
 
@@ -1494,6 +1432,52 @@ export default function Dashboard() {
                   />
                 </div>
 
+                {/* UPI Action Card for Debtor */}
+                {isYouOwe && (
+                  <div className="bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3.5 flex flex-col gap-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950">
+                        <span>📲</span>
+                        <span>UPI Payment Direct</span>
+                      </div>
+                      {targetUpiId ? (
+                        <span className="text-[10px] font-mono font-bold text-indigo-700 bg-white border border-indigo-200/80 px-2 py-0.5 rounded-lg truncate max-w-[120px]">
+                          {targetUpiId}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">No UPI set</span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {upiPayLink ? (
+                        <a
+                          href={upiPayLink}
+                          className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl text-center shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1"
+                        >
+                          <span>Open UPI App ➔</span>
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleCopyUpi}
+                          className="py-2 px-3 bg-white border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl text-center active:scale-95 transition-all truncate"
+                        >
+                          Copy UPI ID
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleCopyAmount}
+                        className="py-2 px-3 bg-white border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl text-center active:scale-95 transition-all truncate"
+                      >
+                        Copy Amount
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -1505,7 +1489,7 @@ export default function Dashboard() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isSettling || !Number(settleAmount) || Number(settleAmount) <= 0}
+                    disabled={isSettling || !numAmount || numAmount <= 0}
                     className={`flex-1 py-3.5 text-white font-bold rounded-2xl text-xs shadow-lg active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5 ${
                       isYouOwe 
                         ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25' 
@@ -1513,7 +1497,7 @@ export default function Dashboard() {
                     }`}
                   >
                     {isYouOwe ? <HandCoins size={15} /> : <Send size={15} />}
-                    <span>{isSettling ? 'Sending...' : isYouOwe ? 'Send Payment' : 'Send Request'}</span>
+                    <span>{isSettling ? 'Submitting...' : isYouOwe ? 'Notify Settle Sent' : 'Send Settle Request'}</span>
                   </button>
                 </div>
 
@@ -1534,6 +1518,120 @@ export default function Dashboard() {
           </div>
         );
       })()}
+
+      {/* End-of-Trip Settle & Close Vault Wizard Modal */}
+      {showSettleWizard && (
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto no-scrollbar">
+            <div className="flex justify-between items-center mb-4">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                <CheckCircle2 size={24} />
+              </div>
+              <button 
+                onClick={() => setShowSettleWizard(false)}
+                disabled={isClosingVault}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <h3 className="text-xl font-black text-slate-900 mb-1 font-heading">
+              End-of-Trip Settle Wizard 🏁
+            </h3>
+            
+            <p className="text-xs text-slate-500 mb-5">
+              The minimal settlement transactions below will zero-out all companion balances for <strong>{currentTrip?.name}</strong>.
+            </p>
+
+            {/* Minimal Settlements List */}
+            {minimalSettlements.length === 0 ? (
+              <div className="bg-emerald-50 border border-emerald-200/80 p-6 rounded-3xl text-center mb-6">
+                <div className="text-3xl mb-2">🎉</div>
+                <h4 className="text-sm font-black text-emerald-950">All Debts Already Settled!</h4>
+                <p className="text-xs text-emerald-700 mt-1">
+                  Every companion has a net balance of ₹0.00. This trip is completely balanced!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-6">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
+                  <span>Who Pays Whom ({minimalSettlements.length} Transfers)</span>
+                </div>
+
+                {minimalSettlements.map((step, idx) => {
+                  const isSelfPayer = (step.from?._id || step.from)?.toString() === user?._id?.toString();
+                  const isSelfReceiver = (step.to?._id || step.to)?.toString() === user?._id?.toString();
+
+                  return (
+                    <div 
+                      key={idx}
+                      className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
+                        isSelfPayer 
+                          ? 'bg-rose-50/60 border-rose-200' 
+                          : isSelfReceiver 
+                            ? 'bg-emerald-50/60 border-emerald-200' 
+                            : 'bg-slate-50/80 border-slate-200/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-6 h-6 rounded-full bg-white border border-slate-200 text-[11px] font-black text-slate-600 flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0 text-xs">
+                          <p className="font-bold text-slate-900 truncate">
+                            <span className={isSelfPayer ? 'text-rose-700 font-black' : ''}>{step.from?.name || 'Companion'}</span>
+                            <span className="text-slate-400 font-normal"> pays </span>
+                            <span className={isSelfReceiver ? 'text-emerald-700 font-black' : ''}>{step.to?.name || 'Companion'}</span>
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {isSelfPayer ? '👉 You need to send this transfer' : isSelfReceiver ? '📥 You will receive this' : 'Group companion transfer'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-sm sm:text-base font-black text-slate-900 font-heading">
+                          {currency}{step.amount.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Wizard Actions */}
+            <div className="flex flex-col gap-2.5 pt-2 border-t border-slate-100">
+              {isAdmin && !isClosed && (
+                <button
+                  type="button"
+                  onClick={() => handleCloseVault(false)}
+                  disabled={isClosingVault}
+                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={16} className="text-emerald-400" />
+                  <span>{isClosingVault ? 'Archiving Vault...' : 'Mark All Settled & Close Vault 🔒'}</span>
+                </button>
+              )}
+
+              {isClosed && (
+                <div className="p-3 bg-slate-100 text-slate-600 text-xs font-bold rounded-2xl text-center">
+                  🔒 This vault is closed.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowSettleWizard(false)}
+                className="w-full py-3 bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs rounded-2xl active:scale-95 transition-all"
+              >
+                Close Wizard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ask Companion For Funds Modal */}
       {showAskModal && (
@@ -1895,6 +1993,18 @@ export default function Dashboard() {
                   <Printer size={16} className="text-blue-600 shrink-0" />
                   <span>Print Report</span>
                 </button>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleCloseVault(!isClosed)}
+                    disabled={isClosingVault}
+                    className="p-3 bg-slate-50 hover:bg-amber-50/50 hover:border-amber-200 border border-slate-200/80 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-all active:scale-95 text-left col-span-2 sm:col-span-1"
+                  >
+                    <span>{isClosed ? '🔓' : '🔒'}</span>
+                    <span>{isClosed ? 'Reopen Vault' : 'Close & Freeze Vault'}</span>
+                  </button>
+                )}
               </div>
             </div>
 

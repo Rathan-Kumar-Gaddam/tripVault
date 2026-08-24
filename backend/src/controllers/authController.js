@@ -1,3 +1,4 @@
+import { sendOtp, checkBalance } from '../services/smsService.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -14,6 +15,7 @@ const formatUserResponse = (user, token) => {
     email: user.email || '',
     phone: user.phone || '',
     avatar: user.avatar || '',
+    upiId: user.upiId || '',
     hasPassword: !!user.password,
     requiresPasswordChange: !!user.requiresPasswordChange,
   };
@@ -22,6 +24,9 @@ const formatUserResponse = (user, token) => {
   }
   return resObj;
 };
+
+// In-memory OTP storage for phone login verification (expires in 10 mins)
+const otpStore = new Map();
 
 // @desc    Register a new user or claim an invited companion account
 // @route   POST /api/auth/register
@@ -123,7 +128,97 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// @desc    Auth user via Phone number & get token
+// @desc    Send lightweight verification OTP for mobile number
+// @route   POST /api/auth/send-otp
+export const sendPhoneOtp = async (req, res) => {
+  try {
+    const { phone, channel } = req.body;
+    if (!phone) {
+      return res.status(400).json({ message: 'Please provide a 10-digit phone number.' });
+    }
+
+    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    }
+
+    // Generate a 4-digit code (standard demo code 1234 for test account 9999999999 or randomized)
+    const code = cleanPhone === '9999999999' ? '1234' : Math.floor(1000 + Math.random() * 9000).toString();
+    otpStore.set(cleanPhone, { code, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+    const userExists = await User.exists({ phone: cleanPhone });
+
+    // Send OTP via APITXT SMS / WhatsApp Gateway
+    const selectedChannel = channel === 'whatsapp' ? 'whatsapp' : 'sms';
+    const otpResult = await sendOtp({
+      mobile: cleanPhone,
+      otp: code,
+      channel: selectedChannel,
+    });
+
+    const isSimulated = otpResult?.simulated;
+    const isSuccess = otpResult?.success;
+
+    res.json({
+      success: isSuccess,
+      message: isSuccess 
+        ? (otpResult.gatewayMessage || `Verification code sent to +91 ${cleanPhone} via ${selectedChannel.toUpperCase()}`)
+        : (otpResult.error || `Failed to send OTP to +91 ${cleanPhone}`),
+      isExistingUser: !!userExists,
+      channel: selectedChannel,
+      requestId: otpResult?.data?.request_id,
+      // Only supply demoOtp if simulated or test phone
+      demoOtp: (isSimulated || cleanPhone === '9999999999') ? code : undefined,
+      simulated: isSimulated,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to send OTP' });
+  }
+};
+
+// @desc    Verify phone OTP & sign in / register
+// @route   POST /api/auth/verify-otp
+export const verifyPhoneOtp = async (req, res) => {
+  try {
+    const { phone, otp, name } = req.body;
+    if (!phone || !otp) {
+      return res.status(400).json({ message: 'Phone and OTP code are required.' });
+    }
+
+    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+    const cleanOtp = otp.toString().trim();
+
+    // Check stored OTP or standard demo OTP '1234'
+    const stored = otpStore.get(cleanPhone);
+    const isValid = (cleanOtp === '1234') || (stored && stored.code === cleanOtp && stored.expiresAt > Date.now());
+
+    if (!isValid) {
+      return res.status(400).json({ message: 'Invalid or expired verification code. Use code 1234 to proceed.' });
+    }
+
+    // Clear used OTP
+    otpStore.delete(cleanPhone);
+
+    let user = await User.findOne({ phone: cleanPhone });
+    if (!user) {
+      // Auto-register new companion / user if name is provided or default
+      const userName = (name && name.trim()) ? name.trim() : `Traveler ${cleanPhone.slice(-4)}`;
+      user = await User.create({
+        name: userName,
+        phone: cleanPhone,
+      });
+    } else if (name && name.trim() && user.name.startsWith('Traveler ')) {
+      user.name = name.trim();
+      await user.save();
+    }
+
+    res.json(formatUserResponse(user, generateToken(user._id)));
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'OTP verification failed' });
+  }
+};
+
+// @desc    Auth user via Phone number & get token (legacy/fallback)
 // @route   POST /api/auth/login-phone
 export const loginPhone = async (req, res) => {
   try {
@@ -137,7 +232,7 @@ export const loginPhone = async (req, res) => {
       return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
     }
 
-    const user = await User.findOne({ phone: cleanPhone });
+    let user = await User.findOne({ phone: cleanPhone });
     if (!user) {
       return res.status(404).json({ 
         message: 'No account found with this 10-digit phone number. Ask your trip admin to add you or create a new account.' 
@@ -166,12 +261,16 @@ export const getProfile = async (req, res) => {
 // @route   PUT /api/auth/profile
 export const updateProfile = async (req, res) => {
   try {
-    const { name, phone, email, avatar, currentPassword, newPassword } = req.body;
+    const { name, phone, email, avatar, upiId, currentPassword, newPassword } = req.body;
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (name && name.trim()) {
       user.name = name.trim();
+    }
+
+    if (upiId !== undefined) {
+      user.upiId = upiId ? upiId.trim() : '';
     }
 
     if (phone !== undefined) {
@@ -234,5 +333,15 @@ export const updateProfile = async (req, res) => {
       return res.status(400).json({ message: `This ${field} is already associated with another account.` });
     }
     res.status(500).json({ message: error.message || 'Failed to update profile' });
+  }
+};
+// @desc    Get remaining APITXT SMS & OTP wallet balance
+// @route   GET /api/auth/sms-balance
+export const getSmsBalance = async (req, res) => {
+  try {
+    const result = await checkBalance();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to fetch balance' });
   }
 };

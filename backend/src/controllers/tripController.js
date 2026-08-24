@@ -1,3 +1,4 @@
+import { sendTripInviteSms } from '../services/smsService.js';
 import Trip from '../models/Trip.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
@@ -7,17 +8,71 @@ import FundRequest from '../models/FundRequest.js';
 // @route   POST /api/trips
 export const createTrip = async (req, res) => {
   try {
-    const { name, destination, currency, budget } = req.body;
+    const { 
+      name, 
+      destination, 
+      category, 
+      icon, 
+      startDate, 
+      endDate, 
+      description, 
+      currency, 
+      budget,
+      initialMembers 
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Trip destination or name is required.' });
+    }
+
+    const membersList = [{ user: req.user._id, role: 'admin', balance: 0 }];
+
+    // If user provided initial companions during creation
+    if (Array.isArray(initialMembers) && initialMembers.length > 0) {
+      for (const m of initialMembers) {
+        if (m && m.name && m.name.trim() && m.phone) {
+          const cleanPhone = m.phone.toString().replace(/\D/g, '');
+          if (/^\d{10}$/.test(cleanPhone)) {
+            // Find or Create User
+            let companionUser = await User.findOne({ phone: cleanPhone });
+            if (!companionUser) {
+              const defaultPassword = await bcrypt.hash(`Trip_${cleanPhone.slice(-4)}_2026`, 10);
+              companionUser = await User.create({
+                name: m.name.trim(),
+                phone: cleanPhone,
+                email: `${cleanPhone}@tripvault.local`,
+                password: defaultPassword,
+              });
+            }
+
+            // Ensure not already in members
+            if (!membersList.some(mem => mem.user.toString() === companionUser._id.toString())) {
+              membersList.push({
+                user: companionUser._id,
+                role: 'member',
+                balance: 0,
+              });
+            }
+          }
+        }
+      }
+    }
 
     const trip = await Trip.create({
-      name,
-      destination,
-      currency: currency || '₹',
+      name: name.trim(),
+      destination: destination?.trim() || name.trim(),
+      category: category?.trim() || 'Vacation',
+      icon: icon?.trim() || '🗺️',
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      description: description?.trim() || '',
+      currency: currency?.trim() || '₹',
       budget: Number(budget) > 0 ? Number(budget) : 0,
-      members: [{ user: req.user._id, role: 'admin', balance: 0 }],
+      members: membersList,
     });
 
-    res.status(201).json(trip);
+    const populatedTrip = await Trip.findById(trip._id).populate('members.user', 'name phone avatar upiId');
+    res.status(201).json(populatedTrip);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -108,35 +163,68 @@ export const getTripPreview = async (req, res) => {
   }
 };
 
-// @desc    Join a trip using an invite link
+// @desc    Join a trip using an invite link (supports member or viewer role)
 // @route   POST /api/trips/:tripId/join
 export const joinTrip = async (req, res) => {
   try {
     const { tripId } = req.params;
+    const { role } = req.body; // 'member' | 'viewer'
     const userId = req.user._id;
 
     const trip = await Trip.findById(tripId);
     if (!trip) return res.status(404).json({ message: 'Trip not found.' });
 
+    const memberRole = (role === 'viewer') ? 'viewer' : 'member';
+
     // Check if user is already a member
     const alreadyInTrip = trip.members.some((m) => m.user.toString() === userId.toString());
     if (alreadyInTrip) {
       const populated = await Trip.findById(tripId)
-        .populate('members.user', 'name email phone avatar')
+        .populate('members.user', 'name email phone avatar upiId')
         .lean();
       return res.status(200).json({ message: 'Already a member of this trip.', trip: populated });
     }
 
-    // Add user as member
-    trip.members.push({ user: userId, role: 'member', balance: 0 });
+    // Add user with specified role
+    trip.members.push({ user: userId, role: memberRole, balance: 0 });
     await trip.save();
 
     const populated = await Trip.findById(tripId)
-      .populate('members.user', 'name email phone avatar')
+      .populate('members.user', 'name email phone avatar upiId')
       .lean();
     res.status(200).json({ message: `Successfully joined ${trip.name}!`, trip: populated });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to join trip' });
+  }
+};
+
+// @desc    Close / Settle & Freeze a trip vault
+// @route   POST /api/trips/:tripId/close
+export const closeTrip = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { reopen } = req.body;
+    const requesterId = req.user._id;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) return res.status(404).json({ message: 'Trip not found.' });
+
+    // Validate requester is admin or member
+    const isMember = trip.members.some((m) => (m.user?._id || m.user).toString() === requesterId.toString());
+    if (!isMember) return res.status(403).json({ message: 'Access denied.' });
+
+    trip.isClosed = reopen ? false : true;
+    await trip.save();
+
+    const updatedTrip = await Trip.findById(tripId)
+      .populate('members.user', 'name email phone avatar upiId');
+
+    res.status(200).json({
+      message: reopen ? 'Trip vault reopened!' : 'Trip vault successfully settled and closed! 🔒',
+      trip: updatedTrip
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to update trip status' });
   }
 };
 

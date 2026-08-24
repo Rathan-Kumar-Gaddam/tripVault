@@ -271,6 +271,34 @@ const useTripStore = create((set, get) => ({
     set({ currentTrip: null, transactions: [], fundRequests: [] });
   },
 
+  sendPhoneOtp: async (phone, channel = 'sms') => {
+    try {
+      set({ isLoading: true, error: null });
+      const { data } = await api.post('/auth/send-otp', { phone, channel });
+      set({ isLoading: false });
+      return data;
+    } catch (err) {
+      const msg = getErrorMessage(err, 'Failed to send verification code');
+      set({ error: msg, isLoading: false });
+      throw new Error(msg);
+    }
+  },
+
+  verifyPhoneOtp: async (phone, otp, name) => {
+    try {
+      set({ isLoading: true, error: null });
+      const { data } = await api.post('/auth/verify-otp', { phone, otp, name });
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data));
+      set({ user: data, isLoading: false, error: null });
+      return data;
+    } catch (err) {
+      const msg = getErrorMessage(err, 'OTP verification failed');
+      set({ error: msg, isLoading: false });
+      throw new Error(msg);
+    }
+  },
+
   // Trips & Balances (Stale-While-Revalidate: Instant render with cache, silent background sync)
   fetchTrips: async () => {
     // Only set loading to true if there is no cached data to show immediately
@@ -308,6 +336,19 @@ const useTripStore = create((set, get) => ({
     });
     return data;
   },
+
+  closeTrip: async (tripId, reopen = false) => {
+    const { data } = await api.post(`/trips/${tripId}/close`, { reopen });
+    set((state) => {
+      const updatedTrips = state.trips.map((t) => (t._id === tripId ? data.trip : t));
+      localStorage.setItem('cached_trips', JSON.stringify(updatedTrips));
+      return {
+        currentTrip: state.currentTrip?._id === tripId ? data.trip : state.currentTrip,
+        trips: updatedTrips,
+      };
+    });
+    return data;
+  },
   
   deleteTrip: async (tripId) => {
     await api.delete(`/trips/${tripId}`);
@@ -337,13 +378,18 @@ const useTripStore = create((set, get) => ({
     });
   },
 
-  fetchTripDetails: async (tripId) => {
-    // Instant cache hydration: If trip is in cached trips, show it immediately (0ms delay)
-    const existing = get().trips.find((t) => t._id === tripId);
-    if (existing && (!get().currentTrip || get().currentTrip._id !== tripId)) {
-      set({ currentTrip: existing, isLoading: true });
-    } else {
-      set({ isLoading: true });
+  fetchTripDetails: async (tripId, options = {}) => {
+    const current = get().currentTrip;
+    const isAlreadyLoaded = current && current._id === tripId;
+    
+    // Only flash full loader if we have zero data for this trip
+    if (!isAlreadyLoaded && !options.silent) {
+      const cached = get().trips.find((t) => t._id === tripId);
+      if (cached) {
+        set({ currentTrip: cached, isLoading: false });
+      } else {
+        set({ isLoading: true });
+      }
     }
 
     try {
@@ -364,10 +410,10 @@ const useTripStore = create((set, get) => ({
     }
   },
 
-  joinTrip: async (tripId) => {
+  joinTrip: async (tripId, role = 'member') => {
     set({ isLoading: true });
     try {
-      const { data } = await api.post(`/trips/${tripId}/join`);
+      const { data } = await api.post(`/trips/${tripId}/join`, { role });
       set((state) => {
         const tripExists = state.trips.some(t => t._id === tripId);
         return {
@@ -397,24 +443,24 @@ const useTripStore = create((set, get) => ({
   // Member Management
   addMember: async (tripId, memberData) => {
     await api.post(`/trips/${tripId}/members`, memberData);
-    await get().fetchTripDetails(tripId); // Refresh balances
+    await get().fetchTripDetails(tripId, { silent: true }); // Refresh balances silently
   },
 
   removeMember: async (tripId, memberUserId) => {
     await api.delete(`/trips/${tripId}/members/${memberUserId}`);
-    await get().fetchTripDetails(tripId); // Refresh balances
+    await get().fetchTripDetails(tripId, { silent: true }); // Refresh balances silently
   },
 
   // Transaction Actions (Available to any member)
   logTransaction: async (txData) => {
     const { data } = await api.post('/transactions', txData);
-    await get().fetchTripDetails(txData.tripId); // Refresh balances instantly
+    await get().fetchTripDetails(txData.tripId, { silent: true }); // Refresh balances instantly
     return data;
   },
 
   deleteTransaction: async (txId, tripId) => {
     await api.delete(`/transactions/${txId}`);
-    await get().fetchTripDetails(tripId); // Refresh balances instantly
+    await get().fetchTripDetails(tripId, { silent: true }); // Refresh balances instantly
   },
 
   // Fund Request Actions (Companion Borrowing)
@@ -426,19 +472,19 @@ const useTripStore = create((set, get) => ({
 
   createFundRequest: async (requestData) => {
     const { data } = await api.post('/requests', requestData);
-    await get().fetchTripDetails(requestData.tripId);
+    await get().fetchTripDetails(requestData.tripId, { silent: true });
     return data;
   },
 
   respondToFundRequest: async (requestId, action, tripId) => {
     const { data } = await api.put(`/requests/${requestId}/respond`, { action });
-    await get().fetchTripDetails(tripId);
+    await get().fetchTripDetails(tripId, { silent: true });
     return data;
   },
 
   cancelFundRequest: async (requestId, tripId) => {
     const { data } = await api.delete(`/requests/${requestId}`);
-    await get().fetchTripDetails(tripId);
+    await get().fetchTripDetails(tripId, { silent: true });
     return data;
   },
 }));

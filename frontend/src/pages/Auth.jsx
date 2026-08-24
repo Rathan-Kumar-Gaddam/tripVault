@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useTripStore from '../store/useTripStore';
-import { 
+import {
+  MessageCircle,
   PlaneTakeoff, 
   Smartphone, 
   Mail, 
@@ -21,15 +22,25 @@ export default function Auth() {
   const [loginMethod, setLoginMethod] = useState('phone'); // 'phone' | 'email'
   const [phone, setPhone] = useState('');
   const [regPhone, setRegPhone] = useState('');
-  const { login, loginWithPhone, register, joinTrip, error, isLoading } = useTripStore();
+  const [otpStep, setOtpStep] = useState(1); // 1: Enter Phone, 2: Enter OTP
+  const [otp, setOtp] = useState('');
+  const [otpName, setOtpName] = useState('');
+  const [resendTimer, setResendTimer] = useState(0);
+  const [otpChannel, setOtpChannel] = useState('sms'); // 'sms' | 'whatsapp'
+
+  const { login, loginWithPhone, sendPhoneOtp, verifyPhoneOtp, register, joinTrip, error, isLoading } = useTripStore();
 
   const handleTabSwitch = (loginState) => {
     setIsLogin(loginState);
+    setOtpStep(1);
+    setOtp('');
     useTripStore.setState({ error: null });
   };
 
   const handleMethodSwitch = (method) => {
     setLoginMethod(method);
+    setOtpStep(1);
+    setOtp('');
     useTripStore.setState({ error: null });
   };
 
@@ -43,6 +54,37 @@ export default function Auth() {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
     setRegPhone(raw);
     if (error) useTripStore.setState({ error: null });
+  };
+
+  const handleSendOtp = async (channelOverride) => {
+    const cleanPhone = phone.trim();
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      toast.error('Please enter a valid 10-digit phone number.');
+      return;
+    }
+
+    const channelToSend = channelOverride || otpChannel;
+
+    try {
+      const res = await sendPhoneOtp(cleanPhone, channelToSend);
+      setOtpStep(2);
+      // If demo mode or test number, pre-fill; otherwise keep blank for user to enter code
+      setOtp(res.demoOtp || '');
+      setResendTimer(30);
+      toast.success(res.message || `Verification code dispatched via ${channelToSend.toUpperCase()}!`);
+      
+      const interval = setInterval(() => {
+        setResendTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      toast.error(err.message || 'Failed to send OTP.');
+    }
   };
 
   const checkPendingJoin = async () => {
@@ -68,15 +110,20 @@ export default function Auth() {
     try {
       if (isLogin) {
         if (loginMethod === 'phone') {
-          const cleanPhone = phone.trim();
-          if (!cleanPhone || cleanPhone.length !== 10) {
-            const msg = 'Please enter a valid 10-digit phone number.';
-            useTripStore.setState({ error: msg });
-            toast.error(msg);
+          if (otpStep === 1) {
+            await handleSendOtp();
             return;
           }
-          await loginWithPhone(cleanPhone);
-          toast.success('Welcome back! ✈️');
+
+          // Step 2: Verify OTP
+          const cleanOtp = otp.trim();
+          if (!cleanOtp) {
+            toast.error('Please enter the 4-digit verification code.');
+            return;
+          }
+
+          await verifyPhoneOtp(phone.trim(), cleanOtp, otpName.trim());
+          toast.success('Welcome back to TripVault! ✈️');
           const joined = await checkPendingJoin();
           if (!joined) navigate('/');
         } else {
@@ -120,7 +167,7 @@ export default function Auth() {
         if (!joined) navigate('/');
       }
     } catch (err) {
-      toast.error(err.message || 'Authentication failed');
+      toast.error(err.response?.data?.message || err.message || 'Authentication failed');
     }
   };
 
@@ -280,29 +327,80 @@ export default function Auth() {
             </>
           )}
 
-          {/* Login Mode - Phone */}
+          {/* Login Mode - Phone (2-Step OTP Verification) */}
           {isLogin && loginMethod === 'phone' && (
-            <div className="space-y-2">
-              <div className="relative">
-                <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  name="phone" 
-                  type="tel" 
-                  value={phone}
-                  onChange={handlePhoneChange}
-                  maxLength={10}
-                  placeholder="Enter 10-digit Mobile Number" 
-                  required 
-                  disabled={isLoading}
-                  className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium tracking-wide text-sm placeholder:text-slate-400 disabled:opacity-70" 
-                />
-              </div>
-              <div className="flex justify-between items-center px-1 text-xs">
-                <span className="text-slate-400 text-[11px]">No password required for friends</span>
-                <span className={phone.length === 10 ? 'text-emerald-600 font-bold text-[11px]' : 'text-slate-400 text-[11px]'}>
-                  {phone.length}/10 digits
-                </span>
-              </div>
+            <div className="space-y-3">
+              {otpStep === 1 ? (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      name="phone" 
+                      type="tel" 
+                      value={phone}
+                      onChange={handlePhoneChange}
+                      maxLength={10}
+                      placeholder="Enter 10-digit Mobile Number" 
+                      required 
+                      disabled={isLoading}
+                      className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-semibold tracking-wide text-sm placeholder:text-slate-400 disabled:opacity-70" 
+                    />
+                  </div>
+                  <div className="flex justify-between items-center px-1 text-xs">
+                    <span className="text-slate-400 text-[11px]">Instant OTP verification</span>
+                    <span className={phone.length === 10 ? 'text-emerald-600 font-bold text-[11px]' : 'text-slate-400 text-[11px]'}>
+                      {phone.length}/10 digits
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3.5 animate-in fade-in">
+                  <div className="flex items-center justify-between p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl">
+                    <div className="flex items-center gap-2">
+                      <Smartphone size={16} className="text-indigo-600" />
+                      <span className="text-xs font-bold text-indigo-950">+91 {phone}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOtpStep(1)}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block px-1">
+                      4-Digit Verification Code
+                    </label>
+                    <input 
+                      type="text" 
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.slice(0, 6))}
+                      maxLength={6}
+                      placeholder="1234"
+                      autoFocus
+                      required
+                      className="w-full p-3.5 text-center tracking-[0.5em] text-lg font-black bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center px-1 text-xs">
+                    <span className="text-[11px] text-emerald-600 font-semibold">💡 Demo OTP: 1234</span>
+                    {resendTimer > 0 ? (
+                      <span className="text-[11px] text-slate-400 font-medium">Resend in {resendTimer}s</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        className="text-[11px] font-bold text-indigo-600 hover:underline"
+                      >
+                        Resend Code
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -337,14 +435,20 @@ export default function Auth() {
           {/* Action Button */}
           <button 
             type="submit" 
-            disabled={isLoading || (isLogin && loginMethod === 'phone' && phone.length !== 10)}
+            disabled={isLoading || (isLogin && loginMethod === 'phone' && (otpStep === 1 ? phone.length !== 10 : otp.length < 4))}
             className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2 flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <span className="inline-block animate-pulse">Authenticating...</span>
             ) : (
               <>
-                <span>{isLogin ? 'Enter TripVault' : 'Create Account'}</span>
+                <span>
+                  {!isLogin 
+                    ? 'Create Account' 
+                    : loginMethod === 'phone' 
+                      ? (otpStep === 1 ? 'Get Verification Code 📲' : 'Verify & Enter Vault 🚀')
+                      : 'Enter TripVault'}
+                </span>
                 <ArrowRight size={16} />
               </>
             )}
