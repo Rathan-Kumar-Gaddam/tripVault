@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import Transaction from '../models/Transaction.js';
 import FundRequest from '../models/FundRequest.js';
 import { registerTripClient, broadcastTripEvent } from '../services/sseService.js';
+import { syncTripBalances } from './transactionController.js';
 
 // @desc    Create a new trip (User becomes Admin)
 // @route   POST /api/trips
@@ -129,6 +130,7 @@ export const addMember = async (req, res) => {
     // Add to Trip
     trip.members.push({ user: user._id, role: 'member', balance: 0 });
     await trip.save();
+    await syncTripBalances(tripId);
 
     // Populate member details before sending response
     const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
@@ -190,6 +192,7 @@ export const joinTrip = async (req, res) => {
     // Add user with specified role
     trip.members.push({ user: userId, role: memberRole, balance: 0 });
     await trip.save();
+    await syncTripBalances(tripId);
 
     const populated = await Trip.findById(tripId)
       .populate('members.user', 'name email phone avatar upiId')
@@ -508,12 +511,21 @@ export const removeMember = async (req, res) => {
 export const streamTripEvents = (req, res) => {
   const { tripId } = req.params;
 
+  // Prevent socket timeout on long-lived SSE connections
+  req.socket.setTimeout(0);
+  req.socket.setNoDelay(true);
+  req.socket.setKeepAlive(true);
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
+
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
 
   registerTripClient(tripId, res);
 };

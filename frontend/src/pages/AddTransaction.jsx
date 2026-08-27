@@ -16,6 +16,7 @@ import {
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
 import { PRESET_CATEGORIES, predictCategoryObject } from '../utils/aiCategoryPredictor';
+import { sound } from '../utils/soundEffects';
 
 const QUICK_AMOUNTS = [100, 500, 1000, 2000];
 
@@ -147,9 +148,25 @@ export default function AddTransaction() {
   };
 
   const handleManualCategorySelect = (catId) => {
+    sound.playHapticTick();
+    const catObj = PRESET_CATEGORIES.find((c) => c.id === catId);
     setCategory(catId);
     setIsManuallySet(true);
     setDetectedCategory(null);
+
+    // If description is empty or currently matches any category label, auto-fill it with the selected category!
+    const allCategoryNames = PRESET_CATEGORIES.flatMap((c) => [
+      c.label.toLowerCase(),
+      c.id.toLowerCase(),
+      'general'
+    ]);
+    const currentClean = description.trim().toLowerCase();
+
+    if (!description.trim() || allCategoryNames.includes(currentClean)) {
+      if (catObj?.label) {
+        setDescription(catObj.label);
+      }
+    }
   };
 
   const handleToggleMember = (memberId) => {
@@ -233,6 +250,7 @@ export default function AddTransaction() {
           receipt: receipt || undefined,
         });
 
+        sound.playExpenseSound();
         toast.success(`Expense of ${currency}${numAmount.toLocaleString()} added! 🎉`);
         navigate(`/trip/${id}`);
       } else {
@@ -265,6 +283,7 @@ export default function AddTransaction() {
           receipt: receipt || undefined,
         });
 
+        sound.playSettleSound();
         toast.success(`Settlement of ${currency}${numAmount.toLocaleString()} recorded! 🎉`);
         navigate(`/trip/${id}`);
       }
@@ -319,7 +338,10 @@ export default function AddTransaction() {
       <div className="flex p-1.5 bg-slate-100/90 rounded-2xl">
         <button
           type="button"
-          onClick={() => handleModeChange('expense')}
+          onClick={() => {
+            sound.playHapticTick();
+            handleModeChange('expense');
+          }}
           className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
             mode === 'expense'
               ? 'bg-white shadow-xs text-slate-900'
@@ -331,7 +353,10 @@ export default function AddTransaction() {
         </button>
         <button
           type="button"
-          onClick={() => handleModeChange('settlement')}
+          onClick={() => {
+            sound.playHapticTick();
+            handleModeChange('settlement');
+          }}
           className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
             mode === 'settlement'
               ? 'bg-white shadow-xs text-slate-900'
@@ -372,7 +397,10 @@ export default function AddTransaction() {
               <button
                 key={amt}
                 type="button"
-                onClick={() => setAmount(amt.toString())}
+                onClick={() => {
+                  sound.playHapticTick();
+                  setAmount(amt.toString());
+                }}
                 className="px-3 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-600 transition-all active:scale-95"
               >
                 +{currency}{amt}
@@ -436,9 +464,9 @@ export default function AddTransaction() {
                     key={cat.id}
                     type="button"
                     onClick={() => handleManualCategorySelect(cat.id)}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all ${
+                    className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all active:scale-95 ${
                       isSelected
-                        ? 'bg-slate-900 text-white shadow-md ring-2 ring-indigo-500/30 scale-[1.02]'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/30 scale-[1.02]'
                         : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60'
                     }`}
                   >
@@ -749,7 +777,7 @@ export default function AddTransaction() {
         <button
           type="submit"
           disabled={isSubmitting || numAmount <= 0 || (mode === 'settlement' && (!settleRecipient || payerDebts.length === 0))}
-          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl font-bold text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold text-sm shadow-md shadow-indigo-600/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
         >
           {isSubmitting ? (
             <span>Saving...</span>

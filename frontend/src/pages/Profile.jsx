@@ -11,10 +11,13 @@ import {
   Lock, 
   LogOut, 
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { compressAvatarImage } from '../utils/coverPhotos';
+import { sound } from '../utils/soundEffects';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -24,6 +27,7 @@ export default function Profile() {
   const [phone, setPhone] = useState(user?.phone || '');
   const [email, setEmail] = useState(user?.email || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
+  const [soundEnabled, setSoundEnabled] = useState(sound.isEnabled());
   
   // Password change state
   const [showPasswordSection, setShowPasswordSection] = useState(false);
@@ -301,6 +305,45 @@ export default function Profile() {
                 />
               </div>
             )}
+          </div>
+
+          {/* Sound & Haptic Feedback Switch */}
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between py-2">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                soundEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'
+              }`}>
+                {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800">Satisfying Sound Effects</p>
+                <p className="text-[10px] text-slate-400">Micro-audio for expenses & settlements</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = !soundEnabled;
+                setSoundEnabled(next);
+                sound.setEnabled(next);
+                if (next) {
+                  sound.playExpenseSound();
+                  toast.success('Sound effects enabled! 🔊');
+                } else {
+                  toast('Sound effects muted', { icon: '🔇' });
+                }
+              }}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                soundEnabled ? 'bg-indigo-600' : 'bg-slate-200'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-xs transform transition-transform ${
+                  soundEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Save Button */}

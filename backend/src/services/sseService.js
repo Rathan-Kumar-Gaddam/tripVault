@@ -20,9 +20,21 @@ export const registerTripClient = (tripId, res) => {
 
   // Send initial connection handshake
   res.write(`data: ${JSON.stringify({ type: 'CONNECTED', tripId: tid, timestamp: Date.now() })}\n\n`);
+  if (typeof res.flush === 'function') res.flush();
+
+  // Heartbeat ping every 20 seconds to keep connection alive
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(': keepalive\n\n');
+      if (typeof res.flush === 'function') res.flush();
+    } catch {
+      clearInterval(keepAlive);
+    }
+  }, 20000);
 
   // Clean up on client disconnect
   res.on('close', () => {
+    clearInterval(keepAlive);
     clients.delete(res);
     if (clients.size === 0) {
       tripClients.delete(tid);

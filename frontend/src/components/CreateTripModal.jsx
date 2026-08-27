@@ -17,6 +17,7 @@ import {
   DEFAULT_COVER_PHOTO, 
   compressCoverImage 
 } from '../utils/coverPhotos';
+import { sound } from '../utils/soundEffects';
 
 const CURRENCIES = [
   { code: '₹', label: '₹ INR (India)', icon: '🇮🇳' },
@@ -90,6 +91,7 @@ export default function CreateTripModal({ isOpen, onClose, onCreateTrip }) {
       };
 
       await onCreateTrip(payload);
+      sound.playJoinSound();
       toast.success(`Trip vault "${tripName.trim()}" created! 🎉`);
       onClose();
     } catch (err) {

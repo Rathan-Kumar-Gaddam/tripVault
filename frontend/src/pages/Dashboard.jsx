@@ -25,6 +25,7 @@ import ShareTripModal from '../components/ShareTripModal';
 import ExportModal from '../components/ExportModal';
 import { getCategoryMeta } from '../utils/categoryUtils';
 import { getCoverPhotoForTrip, COVER_PHOTOS, compressCoverImage } from '../utils/coverPhotos';
+import { sound } from '../utils/soundEffects';
 
 export default function Dashboard() {
   const { id } = useParams();
@@ -64,24 +65,28 @@ export default function Dashboard() {
   const [isClosingVault, setIsClosingVault] = useState(false);
   const [showAllGroupDebts, setShowAllGroupDebts] = useState(false);
 
-  // Fetch Trip Details & Live SSE sync
+  // 1. Fetch Trip Details on ID change
   useEffect(() => {
     let isMounted = true;
-    if (!currentTrip || currentTrip._id !== id) {
-      fetchTripDetails(id).catch((err) => {
-        if (isMounted) {
-          setFetchError(err.response?.data?.message || err.message || 'Failed to load trip details');
-        }
-      });
-    }
+    fetchTripDetails(id).catch((err) => {
+      if (isMounted) {
+        setFetchError(err.response?.data?.message || err.message || 'Failed to load trip details');
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [id, fetchTripDetails]);
 
+  // 2. Live Real-Time SSE sync (Subscribes once per tripId)
+  useEffect(() => {
+    if (!id) return;
     subscribeToTripEvents(id);
 
     return () => {
-      isMounted = false;
       unsubscribeFromTripEvents();
     };
-  }, [id, currentTrip, fetchTripDetails, subscribeToTripEvents, unsubscribeFromTripEvents]);
+  }, [id, subscribeToTripEvents, unsubscribeFromTripEvents]);
 
   const handleRefresh = async () => {
     try {
@@ -179,17 +184,23 @@ export default function Dashboard() {
     return result;
   }, [members]);
 
-  // Settlements specifically involving the logged-in member
-  const mySettlements = useMemo(() => {
-    const myId = user?._id?.toString();
-    return minimalSettlements.filter((s) => {
-      const fromId = (s.fromUser?._id || s.fromUser)?.toString();
-      const toId = (s.toUser?._id || s.toUser)?.toString();
-      return fromId === myId || toId === myId;
-    });
-  }, [minimalSettlements, user?._id]);
+  // Individual Personal Direct Settlements (Only who owes me / who I owe)
+  const myDirectSettlements = useMemo(() => {
+    return (companionDebts || [])
+      .filter((d) => (d.status === 'you_owe' || d.status === 'owes_you') && d.amount > 0.01)
+      .map((d) => {
+        const isFromMe = d.status === 'you_owe';
+        return {
+          fromUser: isFromMe ? user : d.user,
+          toUser: isFromMe ? d.user : user,
+          amount: d.amount,
+          isFromMe,
+          isToMe: !isFromMe,
+        };
+      });
+  }, [companionDebts, user]);
 
-  const displayedSettlements = (showAllGroupDebts && isAdmin) ? minimalSettlements : mySettlements;
+  const displayedSettlements = (showAllGroupDebts && isAdmin) ? minimalSettlements : myDirectSettlements;
 
   // Dynamic total group spending computed in real-time from transactions
   const totalSpent = useMemo(() => {
@@ -231,22 +242,51 @@ export default function Dashboard() {
     return list.sort((a, b) => b.amount - a.amount);
   }, [expenseTransactions, totalSpent]);
 
-  // Per-companion total spending contribution
+  // Per-companion real-time spending & balance breakdown
   const memberPaidBreakdown = useMemo(() => {
-    const map = {};
-    expenseTransactions.forEach((t) => {
-      const pId = (t.payer?._id || t.payer)?.toString();
-      if (pId) {
-        map[pId] = (map[pId] || 0) + (t.amount || 0);
+    const paidMap = {};
+    const consumedMap = {};
+
+    (transactions || []).forEach((t) => {
+      if (t.type === 'expense') {
+        const pId = (t.payer?._id || t.payer || t.createdBy?._id || t.createdBy)?.toString();
+        if (pId) {
+          paidMap[pId] = (paidMap[pId] || 0) + (t.amount || 0);
+        }
+
+        const splits = (t.splits && t.splits.length > 0)
+          ? t.splits
+          : (t.sharedBy || []).map((u) => ({
+              user: u,
+              amount: (t.amount || 0) / (t.sharedBy.length || 1),
+            }));
+
+        splits.forEach((s) => {
+          const uId = (s.user?._id || s.user)?.toString();
+          if (uId) {
+            consumedMap[uId] = (consumedMap[uId] || 0) + (Number(s.amount) || 0);
+          }
+        });
+      } else if (t.type === 'settlement') {
+        // Settlement: Payer gave money to recipient
+        const pId = (t.payer?._id || t.payer || t.createdBy?._id || t.createdBy)?.toString();
+        const rId = (t.splits?.[0]?.user?._id || t.splits?.[0]?.user || t.sharedBy?.[0]?._id || t.sharedBy?.[0])?.toString();
+        if (pId) {
+          paidMap[pId] = (paidMap[pId] || 0) + (t.amount || 0);
+        }
+        if (rId) {
+          consumedMap[rId] = (consumedMap[rId] || 0) + (t.amount || 0);
+        }
       }
     });
 
     return members.map((m) => {
       const u = m.user || m;
       const uId = (u._id || u)?.toString();
-      const paid = map[uId] || 0;
+      const paid = paidMap[uId] || 0;
+      const consumed = consumedMap[uId] || 0;
+      const balance = Math.round((paid - consumed) * 100) / 100;
       const pct = totalSpent > 0 ? Math.min(Math.round((paid / totalSpent) * 100), 100) : 0;
-      const balance = Math.round((m.balance || 0) * 100) / 100;
       const isMe = uId === user?._id?.toString();
       return {
         user: u,
@@ -256,7 +296,7 @@ export default function Dashboard() {
         isMe,
       };
     }).sort((a, b) => b.paid - a.paid);
-  }, [expenseTransactions, members, totalSpent, user?._id]);
+  }, [transactions, members, totalSpent, user?._id]);
 
   const budget = currentTrip?.budget || 0;
   const budgetPct = budget > 0 ? Math.min(Math.round((totalSpent / budget) * 100), 100) : null;
@@ -282,6 +322,7 @@ export default function Dashboard() {
         splits: [{ user: toId, amount: settleDebt.amount }],
       });
 
+      sound.playSettleSound();
       toast.success(`Settlement of ${currency}${settleDebt.amount.toLocaleString()} confirmed! 🤝`);
       setSettleDebt(null);
     } catch (err) {
@@ -612,7 +653,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-              {isAdmin && showAllGroupDebts ? 'All Group Settlements' : 'Your Settlements'}
+              {isAdmin && showAllGroupDebts ? 'All Group Settlements' : 'Your Direct Settlements'}
             </h2>
             {isAdmin && minimalSettlements.length > 0 && (
               <button
@@ -620,7 +661,7 @@ export default function Dashboard() {
                 onClick={() => setShowAllGroupDebts(!showAllGroupDebts)}
                 className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
               >
-                {showAllGroupDebts ? '• Show Only Mine' : '• Show All Group Debts'}
+                {showAllGroupDebts ? '• Show Only My Debts' : '• Show All Group Debts'}
               </button>
             )}
           </div>
@@ -913,6 +954,7 @@ export default function Dashboard() {
           transaction={selectedTx}
           onClose={() => setSelectedTx(null)}
           onDelete={async (txId) => {
+            sound.playDeleteSound();
             await deleteTransaction(txId, id);
             setSelectedTx(null);
             toast.success('Expense removed');

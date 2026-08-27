@@ -556,6 +556,10 @@ const useTripStore = create((set, get) => ({
     
     try {
       const es = new EventSource(sseUrl);
+
+      es.onopen = () => {
+        // Live SSE stream active
+      };
       
       es.onmessage = (event) => {
         try {
@@ -565,12 +569,15 @@ const useTripStore = create((set, get) => ({
             get().fetchTripDetails(tripId, { silent: true });
           }
         } catch {
-          // Ignore ping
+          // Keep-alive or non-JSON frame
         }
       };
 
       es.onerror = () => {
-        // Automatically attempts reconnect
+        // Browser handles auto-reconnect automatically
+        if (es.readyState === EventSource.CLOSED) {
+          // Closed by server or navigation
+        }
       };
 
       set({ _eventSource: es });

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Logo from '../components/Logo';
+import { sound } from '../utils/soundEffects';
 
 export default function JoinTrip() {
   const { id } = useParams();
@@ -43,6 +44,7 @@ export default function JoinTrip() {
       setIsJoining(true);
       await joinTrip(id, requestedRole);
       sessionStorage.removeItem('pendingJoinTripId');
+      sound.playJoinSound();
       toast.success(`Welcome to ${tripPreview?.name || 'the trip'}! 🎉`);
       navigate(`/trip/${id}`);
     } catch (err) {
@@ -78,6 +80,7 @@ export default function JoinTrip() {
       if (res?.token) {
         await joinTrip(id, requestedRole);
         sessionStorage.removeItem('pendingJoinTripId');
+        sound.playJoinSound();
         toast.success(`Welcome to ${tripPreview?.name || 'the trip'}! 🎉`);
         navigate(`/trip/${id}`);
       }

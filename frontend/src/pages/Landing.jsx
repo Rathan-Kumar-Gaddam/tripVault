@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import useTripStore from '../store/useTripStore';
 import Logo from '../components/Logo';
 import { 
   ArrowRight, 
@@ -8,9 +9,9 @@ import {
   Users, 
   Download, 
   HandCoins, 
-  Smartphone,
-  PieChart,
-  Palmtree
+  Smartphone, 
+  PieChart, 
+  Palmtree 
 } from 'lucide-react';
 import { predictCategoryObject } from '../utils/aiCategoryPredictor';
 
@@ -23,6 +24,7 @@ const DEMO_MEMBERS = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const user = useTripStore((state) => state.user);
 
   // Interactive Live Demo State
   const [demoAmount, setDemoAmount] = useState(2400);
@@ -63,21 +65,34 @@ export default function Landing() {
           </nav>
 
           <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => navigate('/auth')}
-              className="px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/auth')}
-              className="px-4 sm:px-5 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-95 flex items-center gap-1.5"
-            >
-              <span>Get Started Free</span>
-              <ArrowRight size={14} />
-            </button>
+            {user ? (
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="px-4 sm:px-5 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <span>Open Vaults ({user.name})</span>
+                <ArrowRight size={14} />
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate('/auth')}
+                  className="px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors"
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/auth')}
+                  className="px-4 sm:px-5 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <span>Get Started Free</span>
+                  <ArrowRight size={14} />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -111,10 +126,10 @@ export default function Landing() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <button
               type="button"
-              onClick={() => navigate('/auth')}
+              onClick={() => navigate(user ? '/' : '/auth')}
               className="w-full sm:w-auto px-7 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
             >
-              <span>Create Your Vault Free</span>
+              <span>{user ? 'Open Your Trip Vaults' : 'Create Your Vault Free'}</span>
               <ArrowRight size={16} />
             </button>
             <a
@@ -402,10 +417,10 @@ export default function Landing() {
 
           <button
             type="button"
-            onClick={() => navigate('/auth')}
+            onClick={() => navigate(user ? '/' : '/auth')}
             className="px-7 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 inline-flex items-center gap-2"
           >
-            <span>Start Your Vault Free</span>
+            <span>{user ? 'Open Your Trip Vaults' : 'Start Your Vault Free'}</span>
             <ArrowRight size={15} />
           </button>
         </div>
@@ -419,7 +434,11 @@ export default function Landing() {
           <Logo size="sm" />
           <p>© {new Date().getFullYear()} TripVault. Peaceful travel ledgers & zero math.</p>
           <div className="flex items-center gap-4 font-semibold">
-            <button onClick={() => navigate('/auth')} className="hover:text-slate-900">Sign In</button>
+            {user ? (
+              <button onClick={() => navigate('/')} className="hover:text-indigo-600 font-bold">Dashboard</button>
+            ) : (
+              <button onClick={() => navigate('/auth')} className="hover:text-slate-900">Sign In</button>
+            )}
             <a href="#playground" className="hover:text-slate-900">Live Demo</a>
             <a href="#features" className="hover:text-slate-900">Features</a>
           </div>
