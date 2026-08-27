@@ -222,12 +222,9 @@ cd tripVault
 
 ### 🔐 Authentication (`/api/auth`)
 | Method | Endpoint | Description | Protected |
-| :--- | :--- | :--- | :---: |
-| `POST` | `/api/auth/register` | Register with Name, Email/Phone, and Password | No |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/register` | Register with Name, Email, Password, and Phone | No |
 | `POST` | `/api/auth/login` | Login with Email and Password | No |
-| `POST` | `/api/auth/login-phone` | Quick login via Phone number | No |
-| `POST` | `/api/auth/send-otp` | Send Phone OTP (for verification) | No |
-| `POST` | `/api/auth/verify-otp` | Verify Phone OTP | No |
 | `GET` | `/api/auth/profile` | Get current logged-in user profile | Yes |
 | `PUT` | `/api/auth/profile` | Update profile details (Name, UPI ID, Avatar) | Yes |
 

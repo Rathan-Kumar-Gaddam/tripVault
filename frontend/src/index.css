@@ -89,12 +89,6 @@
   animation: skeleton-shimmer 1.4s ease infinite;
 }
 
-.skeleton-box-dark {
-  background: linear-gradient(90deg, #1e293b 25%, #334155 37%, #1e293b 63%);
-  background-size: 400% 100%;
-  animation: skeleton-shimmer 1.4s ease infinite;
-}
-
 /* Tactile Spring Micro-Interactions */
 .tap-bounce {
   transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;

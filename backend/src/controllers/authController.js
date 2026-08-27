@@ -1,4 +1,3 @@
-import { sendOtp, checkBalance } from '../services/smsService.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -25,8 +24,43 @@ const formatUserResponse = (user, token) => {
   return resObj;
 };
 
-// In-memory OTP storage for phone login verification (expires in 10 mins)
-const otpStore = new Map();
+// @desc    Fast 1-tap sign-in with phone number only (No OTP, No Password)
+// @route   POST /api/auth/login-phone
+export const loginPhone = async (req, res) => {
+  try {
+    const { phone, name } = req.body;
+    if (!phone) {
+      return res.status(400).json({ message: 'Please provide a 10-digit phone number.' });
+    }
+
+    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    }
+
+    let user = await User.findOne({ phone: cleanPhone });
+
+    if (!user) {
+      // If user does not exist and name is provided, create new profile immediately
+      if (name && name.trim()) {
+        user = await User.create({
+          name: name.trim(),
+          phone: cleanPhone,
+        });
+      } else {
+        // Return signal to frontend to prompt for user's Name
+        return res.status(200).json({
+          requiresName: true,
+          message: 'Welcome! Please enter your name to complete your passbook profile.',
+        });
+      }
+    }
+
+    res.json(formatUserResponse(user, generateToken(user._id)));
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Phone sign-in failed' });
+  }
+};
 
 // @desc    Register a new user or claim an invited companion account
 // @route   POST /api/auth/register
@@ -65,7 +99,7 @@ export const registerUser = async (req, res) => {
       if (existingPhoneUser) {
         if (existingPhoneUser.password) {
           return res.status(400).json({ 
-            message: 'An account with this phone number already exists. Please sign in with your email or phone.' 
+            message: 'An account with this phone number already exists. Please sign in with your email or mobile.' 
           });
         }
         // Claim/upgrade companion account created without a password
@@ -95,153 +129,58 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// @desc    Auth user with Email & Password & get token
+// @desc    Auth user with Email or Phone & Password & get token
 // @route   POST /api/auth/login
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, phone, identifier, password } = req.body;
+    const input = (identifier || email || phone || '').toString().trim();
 
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Please provide both email and password.' });
+    if (!input || !password) {
+      return res.status(400).json({ message: 'Please provide both email/phone and password.' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const user = await User.findOne({ email: cleanEmail });
+    const cleanPhone = input.replace(/\D/g, '').slice(-10);
+    const isPhone = /^\d{10}$/.test(cleanPhone);
+    const cleanEmail = input.toLowerCase();
+
+    // Query user by phone or email
+    let user;
+    if (isPhone) {
+      user = await User.findOne({ phone: cleanPhone });
+    }
     if (!user) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      user = await User.findOne({ 
+        $or: [
+          { email: cleanEmail },
+          ...(cleanPhone.length === 10 ? [{ phone: cleanPhone }] : [])
+        ] 
+      });
     }
 
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials. No account found with this email or phone.' });
+    }
+
+    // If user was invited by phone without a password, allow setting it directly
     if (!user.password) {
-      return res.status(401).json({ 
-        message: 'This account was invited by phone without a password. Please sign in using your Phone Number or register your password.' 
-      });
+      if (password.length < 6) {
+        return res.status(400).json({ message: 'Please enter a password with at least 6 characters to secure your account.' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(password, salt);
+      await user.save();
+      return res.json(formatUserResponse(user, generateToken(user._id)));
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      return res.status(401).json({ message: 'Invalid email/phone or password.' });
     }
 
     res.json(formatUserResponse(user, generateToken(user._id)));
   } catch (error) {
     res.status(500).json({ message: error.message || 'Login failed' });
-  }
-};
-
-// @desc    Send lightweight verification OTP for mobile number
-// @route   POST /api/auth/send-otp
-export const sendPhoneOtp = async (req, res) => {
-  try {
-    const { phone, channel } = req.body;
-    if (!phone) {
-      return res.status(400).json({ message: 'Please provide a 10-digit phone number.' });
-    }
-
-    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
-    if (!/^\d{10}$/.test(cleanPhone)) {
-      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
-    }
-
-    // Generate a 4-digit code (standard demo code 1234 for test account 9999999999 or randomized)
-    const code = cleanPhone === '9999999999' ? '1234' : Math.floor(1000 + Math.random() * 9000).toString();
-    otpStore.set(cleanPhone, { code, expiresAt: Date.now() + 10 * 60 * 1000 });
-
-    const userExists = await User.exists({ phone: cleanPhone });
-
-    // Send OTP via APITXT SMS / WhatsApp Gateway
-    const selectedChannel = channel === 'whatsapp' ? 'whatsapp' : 'sms';
-    const otpResult = await sendOtp({
-      mobile: cleanPhone,
-      otp: code,
-      channel: selectedChannel,
-    });
-
-    const isSimulated = otpResult?.simulated;
-    const isSuccess = otpResult?.success;
-
-    res.json({
-      success: isSuccess,
-      message: isSuccess 
-        ? (otpResult.gatewayMessage || `Verification code sent to +91 ${cleanPhone} via ${selectedChannel.toUpperCase()}`)
-        : (otpResult.error || `Failed to send OTP to +91 ${cleanPhone}`),
-      isExistingUser: !!userExists,
-      channel: selectedChannel,
-      requestId: otpResult?.data?.request_id,
-      // Only supply demoOtp if simulated or test phone
-      demoOtp: (isSimulated || cleanPhone === '9999999999') ? code : undefined,
-      simulated: isSimulated,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Failed to send OTP' });
-  }
-};
-
-// @desc    Verify phone OTP & sign in / register
-// @route   POST /api/auth/verify-otp
-export const verifyPhoneOtp = async (req, res) => {
-  try {
-    const { phone, otp, name } = req.body;
-    if (!phone || !otp) {
-      return res.status(400).json({ message: 'Phone and OTP code are required.' });
-    }
-
-    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
-    const cleanOtp = otp.toString().trim();
-
-    // Check stored OTP or standard demo OTP '1234'
-    const stored = otpStore.get(cleanPhone);
-    const isValid = (cleanOtp === '1234') || (stored && stored.code === cleanOtp && stored.expiresAt > Date.now());
-
-    if (!isValid) {
-      return res.status(400).json({ message: 'Invalid or expired verification code. Use code 1234 to proceed.' });
-    }
-
-    // Clear used OTP
-    otpStore.delete(cleanPhone);
-
-    let user = await User.findOne({ phone: cleanPhone });
-    if (!user) {
-      // Auto-register new companion / user if name is provided or default
-      const userName = (name && name.trim()) ? name.trim() : `Traveler ${cleanPhone.slice(-4)}`;
-      user = await User.create({
-        name: userName,
-        phone: cleanPhone,
-      });
-    } else if (name && name.trim() && user.name.startsWith('Traveler ')) {
-      user.name = name.trim();
-      await user.save();
-    }
-
-    res.json(formatUserResponse(user, generateToken(user._id)));
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'OTP verification failed' });
-  }
-};
-
-// @desc    Auth user via Phone number & get token (legacy/fallback)
-// @route   POST /api/auth/login-phone
-export const loginPhone = async (req, res) => {
-  try {
-    const { phone } = req.body;
-    if (!phone) {
-      return res.status(400).json({ message: 'Please provide a 10-digit phone number.' });
-    }
-
-    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
-    if (!/^\d{10}$/.test(cleanPhone)) {
-      return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
-    }
-
-    let user = await User.findOne({ phone: cleanPhone });
-    if (!user) {
-      return res.status(404).json({ 
-        message: 'No account found with this 10-digit phone number. Ask your trip admin to add you or create a new account.' 
-      });
-    }
-
-    res.json(formatUserResponse(user, generateToken(user._id)));
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Phone login failed' });
   }
 };
 
@@ -333,15 +272,5 @@ export const updateProfile = async (req, res) => {
       return res.status(400).json({ message: `This ${field} is already associated with another account.` });
     }
     res.status(500).json({ message: error.message || 'Failed to update profile' });
-  }
-};
-// @desc    Get remaining APITXT SMS & OTP wallet balance
-// @route   GET /api/auth/sms-balance
-export const getSmsBalance = async (req, res) => {
-  try {
-    const result = await checkBalance();
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Failed to fetch balance' });
   }
 };

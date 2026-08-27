@@ -158,6 +158,82 @@ export const computeBilateralDebts = (members = [], transactions = [], currentUs
   };
 };
 
+/**
+ * Computes all minimal settlement transfers ("who should pay whom to settle all debts")
+ * Returns: Array of { fromUser, toUser, amount }
+ */
+export const computeMinimalSettlements = (members = []) => {
+  const debtors = [];
+  const creditors = [];
+
+  (members || []).forEach((m) => {
+    const bal = m.balance || 0;
+    if (bal < -0.01) {
+      debtors.push({ user: m.user || m, amount: Math.abs(bal) });
+    } else if (bal > 0.01) {
+      creditors.push({ user: m.user || m, amount: bal });
+    }
+  });
+
+  const result = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < debtors.length && j < creditors.length) {
+    const debtor = debtors[i];
+    const creditor = creditors[j];
+    const settledAmount = Math.min(debtor.amount, creditor.amount);
+
+    if (settledAmount > 0.01) {
+      result.push({
+        fromUser: debtor.user,
+        toUser: creditor.user,
+        amount: Math.round(settledAmount * 100) / 100,
+      });
+    }
+
+    debtor.amount -= settledAmount;
+    creditor.amount -= settledAmount;
+
+    if (debtor.amount <= 0.01) i++;
+    if (creditor.amount <= 0.01) j++;
+  }
+
+  return result;
+};
+
+/**
+ * Returns the list of creditors and exact owed amounts for a specific debtor/payer.
+ */
+export const getPayerDebts = (payerId, members = [], transactions = []) => {
+  if (!payerId) return [];
+  const pIdStr = payerId.toString();
+
+  // 1. Bilateral check
+  const { companionDebts } = computeBilateralDebts(members, transactions, pIdStr);
+  const directOwed = (companionDebts || [])
+    .filter((d) => d.status === 'you_owe' && d.amount > 0.01)
+    .map((d) => ({
+      user: d.user,
+      amount: d.amount,
+    }));
+
+  if (directOwed.length > 0) {
+    return directOwed;
+  }
+
+  // 2. Minimal settlement check fallback
+  const minimal = computeMinimalSettlements(members);
+  const matched = minimal
+    .filter((s) => (s.fromUser?._id || s.fromUser)?.toString() === pIdStr)
+    .map((s) => ({
+      user: s.toUser,
+      amount: s.amount,
+    }));
+
+  return matched;
+};
+
 const getErrorMessage = (err, fallback) => {
   if (err.response?.data?.message) return err.response.data.message;
   if (err.message === 'Network Error' || !err.response) {
@@ -184,11 +260,31 @@ const useTripStore = create((set, get) => ({
   isLoading: false,
   error: null,
 
-  // Auth
-  login: async (email, password) => {
+  // 1-Tap Phone Sign-In (Phone Only, No OTP, No Password)
+  loginWithPhone: async (phone, name) => {
     try {
       set({ isLoading: true, error: null });
-      const { data } = await api.post('/auth/login', { email, password });
+      const { data } = await api.post('/auth/login-phone', { phone, name });
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data));
+        set({ user: data, isLoading: false, error: null });
+      } else {
+        set({ isLoading: false });
+      }
+      return data;
+    } catch (err) {
+      const msg = getErrorMessage(err, 'Phone login failed');
+      set({ error: msg, isLoading: false });
+      throw new Error(msg, { cause: err });
+    }
+  },
+
+  // Auth with Email or Identifier & Password
+  login: async (identifier, password) => {
+    try {
+      set({ isLoading: true, error: null });
+      const { data } = await api.post('/auth/login', { identifier, password });
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data));
       set({ user: data, isLoading: false, error: null });
@@ -196,22 +292,7 @@ const useTripStore = create((set, get) => ({
     } catch (err) {
       const msg = getErrorMessage(err, 'Login failed');
       set({ error: msg, isLoading: false });
-      throw new Error(msg);
-    }
-  },
-
-  loginWithPhone: async (phone) => {
-    try {
-      set({ isLoading: true, error: null });
-      const { data } = await api.post('/auth/login-phone', { phone });
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data));
-      set({ user: data, isLoading: false, error: null });
-      return data;
-    } catch (err) {
-      const msg = getErrorMessage(err, 'Phone login failed');
-      set({ error: msg, isLoading: false });
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   },
 
@@ -226,7 +307,7 @@ const useTripStore = create((set, get) => ({
     } catch (err) {
       const msg = getErrorMessage(err, 'Registration failed');
       set({ error: msg, isLoading: false });
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   },
 
@@ -255,7 +336,7 @@ const useTripStore = create((set, get) => ({
     } catch (err) {
       const msg = getErrorMessage(err, 'Failed to update profile');
       set({ error: msg, isLoading: false });
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   },
 
@@ -271,34 +352,6 @@ const useTripStore = create((set, get) => ({
     set({ currentTrip: null, transactions: [], fundRequests: [] });
   },
 
-  sendPhoneOtp: async (phone, channel = 'sms') => {
-    try {
-      set({ isLoading: true, error: null });
-      const { data } = await api.post('/auth/send-otp', { phone, channel });
-      set({ isLoading: false });
-      return data;
-    } catch (err) {
-      const msg = getErrorMessage(err, 'Failed to send verification code');
-      set({ error: msg, isLoading: false });
-      throw new Error(msg);
-    }
-  },
-
-  verifyPhoneOtp: async (phone, otp, name) => {
-    try {
-      set({ isLoading: true, error: null });
-      const { data } = await api.post('/auth/verify-otp', { phone, otp, name });
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data));
-      set({ user: data, isLoading: false, error: null });
-      return data;
-    } catch (err) {
-      const msg = getErrorMessage(err, 'OTP verification failed');
-      set({ error: msg, isLoading: false });
-      throw new Error(msg);
-    }
-  },
-
   // Trips & Balances (Stale-While-Revalidate: Instant render with cache, silent background sync)
   fetchTrips: async () => {
     // Only set loading to true if there is no cached data to show immediately
@@ -309,7 +362,7 @@ const useTripStore = create((set, get) => ({
       const { data } = await api.get('/trips');
       localStorage.setItem('cached_trips', JSON.stringify(data));
       set({ trips: data, isLoading: false });
-    } catch (err) {
+    } catch {
       set({ isLoading: false });
     }
   },
@@ -426,7 +479,7 @@ const useTripStore = create((set, get) => ({
     } catch (error) {
       set({ isLoading: false });
       const msg = getErrorMessage(error, 'Failed to join trip');
-      throw new Error(msg);
+      throw new Error(msg, { cause: error });
     }
   },
 
@@ -436,7 +489,7 @@ const useTripStore = create((set, get) => ({
       return data;
     } catch (error) {
       const msg = getErrorMessage(error, 'Trip preview not available');
-      throw new Error(msg);
+      throw new Error(msg, { cause: error });
     }
   },
 
@@ -486,6 +539,52 @@ const useTripStore = create((set, get) => ({
     const { data } = await api.delete(`/requests/${requestId}`);
     await get().fetchTripDetails(tripId, { silent: true });
     return data;
+  },
+
+  // Live Real-Time SSE Listener
+  subscribeToTripEvents: (tripId) => {
+    if (!tripId) return;
+    
+    // Close existing event source if any
+    const existing = get()._eventSource;
+    if (existing) {
+      existing.close();
+    }
+
+    const baseURL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : 'https://tripvault-fddi.onrender.com/api');
+    const sseUrl = `${baseURL}/trips/${tripId}/events`;
+    
+    try {
+      const es = new EventSource(sseUrl);
+      
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'TRANSACTIONS_UPDATED' || data.type === 'TRANSACTION_DELETED' || data.type === 'MEMBER_ADDED' || data.type === 'MEMBER_REMOVED' || data.type === 'VAULT_STATUS_CHANGED' || data.type === 'TRIP_METADATA_UPDATED') {
+            // Silently refresh current trip and balances
+            get().fetchTripDetails(tripId, { silent: true });
+          }
+        } catch {
+          // Ignore ping
+        }
+      };
+
+      es.onerror = () => {
+        // Automatically attempts reconnect
+      };
+
+      set({ _eventSource: es });
+    } catch {
+      // EventSource not supported in environment
+    }
+  },
+
+  unsubscribeFromTripEvents: () => {
+    const es = get()._eventSource;
+    if (es) {
+      es.close();
+      set({ _eventSource: null });
+    }
   },
 }));
 

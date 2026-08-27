@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Transaction from '../models/Transaction.js';
 import Trip from '../models/Trip.js';
+import { broadcastTripEvent } from '../services/sseService.js';
 
 /**
  * Recalculate and synchronize all member balances and total spend for a trip
@@ -133,46 +134,48 @@ export const logTransaction = async (req, res) => {
     // Construct splits based on type and splitType
     let finalSplits = [];
     let finalSharedBy = [];
+    const normalizedSplitType = (splitType === 'equal' ? 'all' : splitType) || 'all';
 
     if (type === 'settlement') {
       // Settlement: Payer paid recipient directly
-      const targetRecipient = recipient || (sharedBy.length > 0 ? sharedBy[0] : null) || (splits.length > 0 ? splits[0].user : null);
+      const targetRecipient = recipient || (sharedBy.length > 0 ? sharedBy[0] : null) || (splits.length > 0 ? (splits[0].user?._id || splits[0].user) : null);
       if (!targetRecipient) {
         return res.status(400).json({ message: 'Recipient is required for settlement.' });
       }
       finalSplits = [{ user: targetRecipient, amount: numAmount }];
       finalSharedBy = [targetRecipient];
-    } else if (splitType === 'all') {
+    } else if (normalizedSplitType === 'all') {
       // Split equally among all trip members (excluding read-only viewers if any)
       const spendingMembers = trip.members.filter(m => m.role !== 'viewer');
       const targetMembers = spendingMembers.length > 0 ? spendingMembers : trip.members;
       const splitAmount = Math.round((numAmount / targetMembers.length) * 100) / 100;
       finalSplits = targetMembers.map((m) => ({
-        user: m.user,
+        user: m.user?._id || m.user,
         amount: splitAmount,
       }));
-      finalSharedBy = targetMembers.map((m) => m.user);
-    } else if (splitType === 'self') {
+      finalSharedBy = targetMembers.map((m) => m.user?._id || m.user);
+    } else if (normalizedSplitType === 'self') {
       // Personal Expense: Paid by payer exclusively for themselves (0 debt created)
       finalSplits = [{ user: effectivePayer, amount: numAmount }];
       finalSharedBy = [effectivePayer];
-    } else if (splitType === 'individual') {
+    } else if (normalizedSplitType === 'individual') {
       // Specific single companion
-      const targetUser = (sharedBy && sharedBy.length > 0) ? sharedBy[0] : (splits && splits.length > 0 ? splits[0].user : null);
+      const targetUser = (sharedBy && sharedBy.length > 0) ? sharedBy[0] : (splits && splits.length > 0 ? (splits[0].user?._id || splits[0].user) : null);
       if (!targetUser) {
         return res.status(400).json({ message: 'Please select a companion for individual split.' });
       }
       finalSplits = [{ user: targetUser, amount: numAmount }];
       finalSharedBy = [targetUser];
-    } else if (splitType === 'custom') {
+    } else if (normalizedSplitType === 'custom') {
       // Custom selection: Either pre-defined custom amounts or equal split among selected members
-      if (splits && splits.length > 0 && splits.some((s) => s.amount !== undefined)) {
+      const inputSplits = Array.isArray(splits) ? splits : [];
+      if (inputSplits.length > 0 && inputSplits.some((s) => (s.amount !== undefined || s.share !== undefined))) {
         // Custom amounts provided
-        finalSplits = splits.map((s) => ({
-          user: s.user,
-          amount: Number(s.amount) || 0,
+        finalSplits = inputSplits.map((s) => ({
+          user: s.user?._id || s.user,
+          amount: Number(s.amount !== undefined ? s.amount : s.share) || 0,
         }));
-        finalSharedBy = splits.map((s) => s.user);
+        finalSharedBy = inputSplits.map((s) => s.user?._id || s.user);
       } else if (sharedBy && sharedBy.length > 0) {
         // Equal split among selected members
         const splitAmount = Math.round((numAmount / sharedBy.length) * 100) / 100;
@@ -184,6 +187,17 @@ export const logTransaction = async (req, res) => {
       } else {
         return res.status(400).json({ message: 'Please select at least one companion for custom split.' });
       }
+    }
+
+    if (finalSplits.length === 0) {
+      const spendingMembers = trip.members.filter(m => m.role !== 'viewer');
+      const targetMembers = spendingMembers.length > 0 ? spendingMembers : trip.members;
+      const splitAmount = Math.round((numAmount / targetMembers.length) * 100) / 100;
+      finalSplits = targetMembers.map((m) => ({
+        user: m.user?._id || m.user,
+        amount: splitAmount,
+      }));
+      finalSharedBy = targetMembers.map((m) => m.user?._id || m.user);
     }
 
     // Create the Transaction record
@@ -209,6 +223,13 @@ export const logTransaction = async (req, res) => {
       .populate('createdBy', 'name email phone avatar')
       .populate('sharedBy', 'name email phone avatar')
       .populate('splits.user', 'name email phone avatar');
+
+    broadcastTripEvent(tripId, 'TRANSACTIONS_UPDATED', {
+      transactionId: transaction._id,
+      type,
+      amount: numAmount,
+      description
+    });
 
     res.status(201).json({ 
       message: 'Transaction logged successfully', 
@@ -278,10 +299,13 @@ export const deleteTransaction = async (req, res) => {
       return res.status(403).json({ message: 'You do not have permission to delete this transaction.' });
     }
 
+    const tripId = transaction.tripId;
     await transaction.deleteOne();
 
     // Recalculate balances
     await syncTripBalances(trip._id);
+
+    broadcastTripEvent(tripId, 'TRANSACTION_DELETED', { id });
 
     res.json({ message: 'Transaction deleted successfully' });
   } catch (error) {

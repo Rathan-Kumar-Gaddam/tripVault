@@ -17,6 +17,7 @@ const tripSchema = new mongoose.Schema(
     description: { type: String, default: '' },
     currency: { type: String, default: '₹' },
     budget: { type: Number, default: 0 },
+    coverPhoto: { type: String, default: '' },
     members: [tripMemberSchema],
     totalVault: { type: Number, default: 0 }, // Total contributions injected into the trip
     isClosed: { type: Boolean, default: false }, // Archived/closed trip freeze state

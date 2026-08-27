@@ -1,9 +1,10 @@
-import { sendTripInviteSms } from '../services/smsService.js';
 import Trip from '../models/Trip.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import Transaction from '../models/Transaction.js';
 import FundRequest from '../models/FundRequest.js';
+import { registerTripClient, broadcastTripEvent } from '../services/sseService.js';
+
 // @desc    Create a new trip (User becomes Admin)
 // @route   POST /api/trips
 export const createTrip = async (req, res) => {
@@ -13,6 +14,7 @@ export const createTrip = async (req, res) => {
       destination, 
       category, 
       icon, 
+      coverPhoto,
       startDate, 
       endDate, 
       description, 
@@ -33,15 +35,12 @@ export const createTrip = async (req, res) => {
         if (m && m.name && m.name.trim() && m.phone) {
           const cleanPhone = m.phone.toString().replace(/\D/g, '');
           if (/^\d{10}$/.test(cleanPhone)) {
-            // Find or Create User
+            // Find or Create User by phone
             let companionUser = await User.findOne({ phone: cleanPhone });
             if (!companionUser) {
-              const defaultPassword = await bcrypt.hash(`Trip_${cleanPhone.slice(-4)}_2026`, 10);
               companionUser = await User.create({
                 name: m.name.trim(),
                 phone: cleanPhone,
-                email: `${cleanPhone}@tripvault.local`,
-                password: defaultPassword,
               });
             }
 
@@ -63,6 +62,7 @@ export const createTrip = async (req, res) => {
       destination: destination?.trim() || name.trim(),
       category: category?.trim() || 'Vacation',
       icon: icon?.trim() || '🗺️',
+      coverPhoto: coverPhoto?.trim() || '',
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       description: description?.trim() || '',
@@ -132,6 +132,7 @@ export const addMember = async (req, res) => {
 
     // Populate member details before sending response
     const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+    broadcastTripEvent(tripId, 'MEMBER_ADDED', { user: user.name });
     res.status(200).json({ message: 'Member added successfully', trip: updatedTrip });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to add member' });
@@ -155,6 +156,7 @@ export const getTripPreview = async (req, res) => {
       currency: trip.currency,
       memberCount: trip.members.length,
       destination: trip.destination,
+      coverPhoto: trip.coverPhoto || '',
       adminName: admin?.user?.name || 'Organizer',
       createdAt: trip.createdAt,
     });
@@ -192,6 +194,7 @@ export const joinTrip = async (req, res) => {
     const populated = await Trip.findById(tripId)
       .populate('members.user', 'name email phone avatar upiId')
       .lean();
+    broadcastTripEvent(tripId, 'MEMBER_JOINED', { user: req.user.name });
     res.status(200).json({ message: `Successfully joined ${trip.name}!`, trip: populated });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to join trip' });
@@ -219,12 +222,14 @@ export const closeTrip = async (req, res) => {
     const updatedTrip = await Trip.findById(tripId)
       .populate('members.user', 'name email phone avatar upiId');
 
+    broadcastTripEvent(tripId, 'VAULT_STATUS_CHANGED', { isClosed: trip.isClosed });
+
     res.status(200).json({
       message: reopen ? 'Trip vault reopened!' : 'Trip vault successfully settled and closed! 🔒',
       trip: updatedTrip
     });
   } catch (error) {
-    res.status(500).json({ message: error.message || 'Failed to update trip status' });
+    res.status(500).json({ message: error.message || 'Failed to update vault status' });
   }
 };
 
@@ -254,6 +259,13 @@ export const getTripById = async (req, res) => {
       ],
     });
 
+    // Calculate total expenses dynamically
+    const transactions = await Transaction.find({ tripId: trip._id }).lean();
+    const totalExpenses = transactions
+      .filter((t) => t.type === 'expense')
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+    trip.totalExpenses = totalExpenses;
     trip.pendingRequestsCount = pendingCount;
     res.json(trip);
   } catch (error) {
@@ -285,8 +297,21 @@ export const getUserTrips = async (req, res) => {
       requestCountMap[tId] = (requestCountMap[tId] || 0) + 1;
     });
 
+    // Aggregate total expenses per trip
+    const tripIds = trips.map((t) => t._id);
+    const expensesAggregate = await Transaction.aggregate([
+      { $match: { tripId: { $in: tripIds }, type: 'expense' } },
+      { $group: { _id: '$tripId', total: { $sum: '$amount' } } },
+    ]);
+
+    const expenseMap = {};
+    expensesAggregate.forEach((e) => {
+      expenseMap[e._id.toString()] = e.total;
+    });
+
     const tripsWithNotifications = trips.map((t) => ({
       ...t,
+      totalExpenses: expenseMap[t._id.toString()] || 0,
       pendingRequestsCount: requestCountMap[t._id.toString()] || 0,
     }));
 
@@ -296,12 +321,12 @@ export const getUserTrips = async (req, res) => {
   }
 };
 
-// @desc    Update trip details (name, currency, budget, destination)
+// @desc    Update trip details (name, currency, budget, destination, coverPhoto)
 // @route   PUT /api/trips/:tripId
 export const updateTrip = async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { name, destination, currency, budget } = req.body;
+    const { name, destination, currency, budget, coverPhoto } = req.body;
     const requesterId = req.user._id;
 
     const trip = await Trip.findById(tripId);
@@ -318,6 +343,7 @@ export const updateTrip = async (req, res) => {
     if (destination !== undefined) trip.destination = destination;
     if (currency !== undefined && currency.trim()) trip.currency = currency.trim();
     if (budget !== undefined) trip.budget = Math.max(0, Number(budget) || 0);
+    if (coverPhoto !== undefined) trip.coverPhoto = coverPhoto.trim();
 
     await trip.save();
 
@@ -327,7 +353,6 @@ export const updateTrip = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 
 // @desc    Admin deletes a trip and all its transactions and fund requests
 // @route   DELETE /api/trips/:tripId
@@ -471,8 +496,24 @@ export const removeMember = async (req, res) => {
     await trip.save();
 
     const updatedTrip = await Trip.findById(tripId).populate('members.user', 'name email phone avatar');
+    broadcastTripEvent(tripId, 'MEMBER_REMOVED', { memberUserId });
     res.status(200).json({ message: 'Member removed successfully', trip: updatedTrip });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to remove member' });
   }
+};
+
+// @desc    Live Server-Sent Events stream for real-time trip synchronization
+// @route   GET /api/trips/:tripId/events
+export const streamTripEvents = (req, res) => {
+  const { tripId } = req.params;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  registerTripClient(tripId, res);
 };

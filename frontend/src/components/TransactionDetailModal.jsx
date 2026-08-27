@@ -1,17 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
   X, 
   Trash2, 
   Calendar, 
   Clock, 
-  CreditCard, 
   Users, 
-  User, 
-  HandCoins, 
-  Tag, 
   AlertTriangle,
-  Receipt,
-  CheckCircle2
+  Receipt
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -46,7 +41,7 @@ export default function TransactionDetailModal({
     (splits.length === 1 && (splits[0]?.user?._id || splits[0]?.user)?.toString() === payerId)
   );
 
-  const dateObj = new Date(transaction.createdAt || Date.now());
+  const dateObj = new Date(transaction.createdAt || 0);
   const formattedDate = dateObj.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
@@ -63,7 +58,7 @@ export default function TransactionDetailModal({
       setIsDeleting(true);
       await onDelete(transaction._id);
       onClose();
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete transaction.');
     } finally {
       setIsDeleting(false);
@@ -176,10 +171,14 @@ export default function TransactionDetailModal({
                 const sName = splitUser.name || 'Companion';
                 const isMe = (splitUser._id || splitUser)?.toString() === currentUser?._id?.toString();
                 return (
-                  <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
-                        {sName.charAt(0).toUpperCase()}
+                  <div key={idx} className="flex items-center justify-between text-xs py-2 border-b border-slate-100 last:border-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-800 flex items-center justify-center font-bold text-xs overflow-hidden border border-slate-200 shadow-2xs">
+                        {splitUser.avatar ? (
+                          <img src={splitUser.avatar} alt={sName} className="w-full h-full object-cover" />
+                        ) : (
+                          sName.charAt(0).toUpperCase()
+                        )}
                       </div>
                       <span className="font-bold text-slate-800">
                         {sName} {isMe ? '(You)' : ''}

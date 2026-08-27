@@ -1,14 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
   X, 
   Copy, 
   Check, 
   Share2, 
   MessageCircle, 
-  Send, 
-  QrCode, 
-  Users, 
-  Sparkles 
+  Send
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -33,7 +30,7 @@ export default function ShareTripModal({ trip, isOpen, onClose }) {
       setCopied(true);
       toast.success(inviteRole === 'viewer' ? 'Read-only link copied! 👁️' : 'Trip member link copied! 📋');
       setTimeout(() => setCopied(false), 2500);
-    } catch (err) {
+    } catch {
       toast.error('Failed to copy link.');
     }
   };
@@ -47,7 +44,7 @@ export default function ShareTripModal({ trip, isOpen, onClose }) {
           url: inviteUrl,
         });
         toast.success('Shared successfully! 🚀');
-      } catch (err) {
+      } catch {
         // User cancelled or error
       }
     } else {

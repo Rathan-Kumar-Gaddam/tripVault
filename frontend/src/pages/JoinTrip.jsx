@@ -2,33 +2,29 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useTripStore from '../store/useTripStore';
 import { 
-  PlaneTakeoff, 
   Users, 
   Compass, 
   ArrowRight, 
-  Sparkles, 
-  CheckCircle2, 
-  Smartphone, 
-  User, 
   ShieldCheck,
-  Eye
+  Smartphone,
+  User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Logo from '../components/Logo';
 
 export default function JoinTrip() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, getTripPreview, joinTrip, loginWithPhone, register, isLoading } = useTripStore();
+  const { user, getTripPreview, joinTrip, loginWithPhone } = useTripStore();
 
   const requestedRole = searchParams.get('role') === 'viewer' ? 'viewer' : 'member';
-  const isViewer = requestedRole === 'viewer';
 
   const [tripPreview, setTripPreview] = useState(null);
   const [error, setError] = useState(null);
   const [isJoining, setIsJoining] = useState(false);
 
-  // Quick phone join state for non-logged-in users
+  // Quick 1-tap phone join
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [isNewUser, setIsNewUser] = useState(false);
@@ -40,7 +36,7 @@ export default function JoinTrip() {
         .then((data) => setTripPreview(data))
         .catch((err) => setError(err.message || 'Trip not found or link expired'));
     }
-  }, [id]);
+  }, [id, getTripPreview]);
 
   const handleJoinAuthenticated = async () => {
     try {
@@ -61,7 +57,7 @@ export default function JoinTrip() {
     setPhone(raw);
   };
 
-  const handleQuickJoinSubmit = async (e) => {
+  const handleQuickPhoneJoin = async (e) => {
     e.preventDefault();
     if (!phone || phone.length !== 10) {
       toast.error('Please enter a valid 10-digit mobile number.');
@@ -70,39 +66,23 @@ export default function JoinTrip() {
 
     try {
       setIsJoining(true);
-      // Try phone login first (if admin already added them or they have an account)
-      try {
-        await loginWithPhone(phone);
-        await joinTrip(id);
+      const res = await loginWithPhone(phone, name.trim() || undefined);
+
+      if (res?.requiresName && !isNewUser) {
+        setIsNewUser(true);
+        setIsJoining(false);
+        toast('Please enter your name to complete your passbook profile ✍️', { icon: '👋' });
+        return;
+      }
+
+      if (res?.token) {
+        await joinTrip(id, requestedRole);
         sessionStorage.removeItem('pendingJoinTripId');
         toast.success(`Welcome to ${tripPreview?.name || 'the trip'}! 🎉`);
         navigate(`/trip/${id}`);
-      } catch (loginErr) {
-        // If no account exists for this phone, ask for Name to register
-        if (!isNewUser) {
-          setIsNewUser(true);
-          setIsJoining(false);
-          toast('Please enter your name to complete your passbook profile ✍️', { icon: '👋' });
-          return;
-        }
-
-        if (!name.trim()) {
-          toast.error('Please enter your name.');
-          setIsJoining(false);
-          return;
-        }
-
-        // Register new account with generated default password
-        const autoPassword = `Trip_${phone.slice(-4)}_2026`;
-        const autoEmail = `${phone}@tripvault.local`;
-        await register(name.trim(), autoEmail, autoPassword, phone);
-        await joinTrip(id);
-        sessionStorage.removeItem('pendingJoinTripId');
-        toast.success(`Welcome ${name.trim()} to ${tripPreview?.name || 'the trip'}! 🎉`);
-        navigate(`/trip/${id}`);
       }
     } catch (err) {
-      toast.error(err.message || 'Failed to join trip');
+      toast.error(err.response?.data?.message || err.message || 'Failed to join trip');
     } finally {
       setIsJoining(false);
     }
@@ -127,14 +107,12 @@ export default function JoinTrip() {
   }
 
   return (
-    <div className="flex flex-col justify-center px-4 sm:px-6 py-6 sm:py-10 pb-8 relative">
+    <div className="flex flex-col justify-center px-4 sm:px-6 py-6 sm:py-10 pb-8 relative max-w-md mx-auto">
       {/* Brand Header */}
       <div className="mb-6 text-center">
-        <div className="w-14 h-14 bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-3 shadow-xl shadow-indigo-500/25">
-          <PlaneTakeoff size={28} />
-        </div>
-        <span className="text-[11px] font-extrabold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
-          Trip Invite
+        <Logo size="lg" className="mx-auto mb-3" />
+        <span className="text-[11px] font-extrabold uppercase tracking-widest text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">
+          Trip Vault Invite
         </span>
       </div>
 
@@ -186,7 +164,7 @@ export default function JoinTrip() {
             <button
               onClick={handleJoinAuthenticated}
               disabled={isJoining}
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold text-sm shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
             >
               {isJoining ? (
                 <span>Joining Vault...</span>
@@ -199,42 +177,42 @@ export default function JoinTrip() {
             </button>
           </div>
         ) : (
-          /* If user is NOT logged in: 1-Tap Phone Sign-In / Join Flow */
-          <form onSubmit={handleQuickJoinSubmit} className="flex flex-col gap-3.5">
-            <div className="text-left">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
+          /* If user is NOT logged in: 1-Tap Mobile Number Join Flow */
+          <form onSubmit={handleQuickPhoneJoin} className="space-y-3.5">
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 px-1">
                 Enter your 10-digit mobile number to join
               </label>
               <div className="relative">
                 <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input
+                <input 
                   type="tel"
                   value={phone}
                   onChange={handlePhoneChange}
                   maxLength={10}
-                  placeholder="e.g. 9845201587"
+                  placeholder="e.g. 9876543210"
                   required
                   disabled={isJoining}
-                  className="w-full p-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none font-medium tracking-wide text-sm placeholder:text-slate-400 disabled:opacity-70 transition-all"
+                  className="w-full p-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-medium tracking-wide text-sm placeholder:text-slate-400 disabled:opacity-70"
                 />
               </div>
             </div>
 
             {isNewUser && (
-              <div className="text-left animate-in fade-in slide-in-from-top-2 duration-150">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 px-1">
+              <div className="animate-in fade-in slide-in-from-top-2 duration-150">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 px-1">
                   Your Full Name
                 </label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input
+                  <input 
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g. Rahul Sharma"
                     required
                     disabled={isJoining}
-                    className="w-full p-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none font-medium text-sm placeholder:text-slate-400 disabled:opacity-70 transition-all"
+                    className="w-full p-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-medium text-sm placeholder:text-slate-400 disabled:opacity-70"
                   />
                 </div>
               </div>
@@ -243,13 +221,13 @@ export default function JoinTrip() {
             <button
               type="submit"
               disabled={isJoining || phone.length !== 10 || (isNewUser && !name.trim())}
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold text-sm shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isJoining ? (
                 <span>Entering Vault...</span>
               ) : (
                 <>
-                  <span>{isNewUser ? 'Complete & Join Trip' : 'Join with Mobile'}</span>
+                  <span>{isNewUser ? 'Complete & Join Vault' : 'Join with Mobile'}</span>
                   <ArrowRight size={16} />
                 </>
               )}
@@ -258,7 +236,10 @@ export default function JoinTrip() {
             <div className="pt-2 text-center">
               <button
                 type="button"
-                onClick={() => navigate('/auth')}
+                onClick={() => {
+                  sessionStorage.setItem('pendingJoinTripId', id);
+                  navigate('/auth');
+                }}
                 className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors"
               >
                 Or Sign In with Email & Password →

@@ -9,17 +9,16 @@ import {
   Phone, 
   Mail, 
   Lock, 
-  ChevronDown, 
-  ChevronUp, 
   LogOut, 
-  CheckCircle2, 
-  Sparkles 
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { compressAvatarImage } from '../utils/coverPhotos';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, trips, fetchTrips, updateProfile, fetchProfile, logout } = useTripStore();
+  const { user, updateProfile, fetchProfile, logout } = useTripStore();
 
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
@@ -35,83 +34,35 @@ export default function Profile() {
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
 
+  const [prevUser, setPrevUser] = useState(user);
+  if (user !== prevUser) {
+    setPrevUser(user);
+    setName(user?.name || '');
+    setPhone(user?.phone || '');
+    setEmail(user?.email || '');
+    setAvatar(user?.avatar || '');
+  }
+
   useEffect(() => {
     fetchProfile();
-    if (trips.length === 0) fetchTrips();
-  }, []);
+  }, [fetchProfile]);
 
-  useEffect(() => {
-    if (user) {
-      setName(user.name || '');
-      setPhone(user.phone || '');
-      setEmail(user.email || '');
-      setAvatar(user.avatar || '');
-    }
-  }, [user]);
-
-  // Handle phone input formatting (digits only, max 10)
   const handlePhoneChange = (e) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
     setPhone(raw);
   };
 
-  // Image compressor using HTML5 canvas
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select a valid image file.');
-      return;
+    try {
+      const compressed = await compressAvatarImage(file, 300, 0.85);
+      setAvatar(compressed);
+      toast.success('Photo ready to save! 📸');
+    } catch (err) {
+      toast.error(err.message || 'Failed to process image');
     }
-
-    // Limit source file size to 10MB
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image size must be less than 10MB.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 400;
-        const MAX_HEIGHT = 400;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Convert to lightweight base64 JPEG
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
-        setAvatar(compressedBase64);
-        toast.success('Photo ready to save! 📸');
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRemovePhoto = () => {
-    setAvatar('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    toast.success('Photo removed.');
   };
 
   const handleSubmit = async (e) => {
@@ -164,7 +115,6 @@ export default function Profile() {
       await updateProfile(payload);
       toast.success('Profile updated successfully! ✨');
       
-      // Clear password fields
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -177,49 +127,59 @@ export default function Profile() {
   };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-8 sm:pb-12">
+    <div className="p-4 sm:p-8 max-w-xl mx-auto space-y-6 pb-24 sm:pb-20 animate-in fade-in duration-200">
+      
       {/* Header */}
-      <header className="flex justify-between items-center mb-6 sm:mb-8">
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
         <button 
+          type="button"
           onClick={() => navigate('/')} 
-          className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-transform"
+          className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={16} />
+          <span>All Trips</span>
         </button>
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-heading">Profile & Settings</h1>
         <button 
+          type="button"
           onClick={logout} 
-          title="Sign Out" 
-          className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl hover:bg-rose-100 shadow-sm active:scale-95 transition-transform"
+          className="flex items-center gap-1.5 text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors"
         >
-          <LogOut size={20} />
+          <LogOut size={14} />
+          <span>Sign Out</span>
         </button>
-      </header>
+      </div>
 
-      {/* Main Responsive Grid Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      {/* Page Title */}
+      <div>
+        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight font-heading">
+          Profile & Settings
+        </h1>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Manage your personal details and payment preferences
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
         
-        {/* Left Column: Avatar & Quick Info */}
-        <div className="lg:col-span-4 flex flex-col items-center bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200/80 shadow-sm">
-          <div className="relative group mb-4">
-            <div className="w-32 h-32 rounded-3xl overflow-hidden shadow-xl border-4 border-white bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white text-4xl font-extrabold shadow-indigo-500/20">
+        {/* Avatar Card */}
+        <div className="p-6 bg-white border border-slate-200/90 rounded-3xl shadow-xs flex flex-col items-center justify-center text-center space-y-3">
+          <div className="relative">
+            <div className="w-24 h-24 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/80 flex items-center justify-center font-bold text-2xl text-slate-700 shadow-2xs">
               {avatar ? (
                 <img src={avatar} alt={name} className="w-full h-full object-cover" />
               ) : (
-                name ? name.charAt(0).toUpperCase() : <User size={48} />
+                name ? name.charAt(0).toUpperCase() : <User size={36} className="text-slate-400" />
               )}
             </div>
 
-            {/* Camera upload button */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="absolute -bottom-2 -right-2 p-3 bg-slate-900 text-white rounded-2xl shadow-lg border-2 border-white hover:bg-slate-800 active:scale-95 transition-all"
+              className="absolute -bottom-1 -right-1 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs active:scale-95 transition-all"
               title="Upload Photo"
             >
-              <Camera size={18} />
+              <Camera size={14} />
             </button>
-
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -229,166 +189,131 @@ export default function Profile() {
             />
           </div>
 
-          <h2 className="text-xl font-bold text-slate-900 font-heading text-center">{name || 'Traveler'}</h2>
-          <p className="text-xs text-slate-400 font-medium mb-4">{phone || email || 'No phone set'}</p>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">{name || 'Traveler'}</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">{email || phone || 'No contact set'}</p>
+          </div>
 
-          <div className="flex items-center gap-2 w-full justify-center">
+          {avatar && (
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl transition-colors"
+              onClick={() => setAvatar('')}
+              className="text-[11px] font-bold text-rose-500 hover:text-rose-700 flex items-center gap-1"
             >
-              Change Photo
+              <Trash2 size={12} />
+              <span>Remove Photo</span>
             </button>
-            {avatar && (
-              <button
-                type="button"
-                onClick={handleRemovePhoto}
-                className="text-xs font-bold text-rose-500 bg-rose-50 hover:bg-rose-100 px-4 py-2 rounded-xl transition-colors flex items-center gap-1"
-              >
-                <Trash2 size={13} /> Remove
-              </button>
+          )}
+        </div>
+
+        {/* Inputs Card */}
+        <div className="p-6 bg-white border border-slate-200/90 rounded-3xl shadow-xs space-y-4">
+          
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 px-1">
+              Full Name *
+            </label>
+            <div className="relative">
+              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                disabled={isSaving}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none transition-all"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 px-1">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isSaving}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none transition-all"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5 px-1">
+              10-Digit Phone Number
+            </label>
+            <div className="relative">
+              <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="tel"
+                value={phone}
+                onChange={handlePhoneChange}
+                maxLength={10}
+                disabled={isSaving}
+                placeholder="Optional mobile number"
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Password Section */}
+          <div className="pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowPasswordSection(!showPasswordSection)}
+              className="w-full flex items-center justify-between text-xs font-bold text-slate-700 py-1"
+            >
+              <div className="flex items-center gap-2">
+                <Lock size={15} className="text-slate-400" />
+                <span>Security & Password</span>
+              </div>
+              {showPasswordSection ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+
+            {showPasswordSection && (
+              <div className="space-y-3 pt-3">
+                {user?.hasPassword && (
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Current Password"
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-500 outline-none"
+                  />
+                )}
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New Password (min 6 chars)"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-500 outline-none"
+                />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm New Password"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-500 outline-none"
+                />
+              </div>
             )}
           </div>
 
-          {/* Account Info Stats Card */}
-          <div className="w-full bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-5 shadow-lg shadow-slate-900/10 flex items-center justify-between mt-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center">
-                <Sparkles size={20} className="text-amber-300" />
-              </div>
-              <div>
-                <p className="text-[10px] text-white/70 font-medium uppercase tracking-wider">Active Member</p>
-                <p className="text-sm font-bold">{trips.length} Group {trips.length === 1 ? 'Trip' : 'Trips'}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-xl text-xs font-bold border border-emerald-500/30">
-              <CheckCircle2 size={14} /> Verified
-            </div>
-          </div>
+          {/* Save Button */}
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold text-xs shadow-md shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50 mt-2"
+          >
+            {isSaving ? 'Saving Changes...' : 'Save Profile Changes'}
+          </button>
         </div>
+      </form>
 
-        {/* Right Column: Profile Form & Password Settings */}
-        <div className="lg:col-span-8 bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200/80 shadow-sm">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            
-            {/* Full Name */}
-            <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 block">Full Name</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  disabled={isSaving}
-                  placeholder="Your Name"
-                  className="w-full p-4 pl-12 bg-slate-50/50 border border-slate-200 rounded-2xl font-medium text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm"
-                />
-              </div>
-            </div>
-
-            {/* 10-Digit Phone Number */}
-            <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 block">Phone Number</label>
-              <div className="relative">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={handlePhoneChange}
-                  maxLength={10}
-                  disabled={isSaving}
-                  placeholder="10-digit Phone Number"
-                  className="w-full p-4 pl-12 bg-slate-50/50 border border-slate-200 rounded-2xl font-medium tracking-wide text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm"
-                />
-              </div>
-              <div className="flex justify-between items-center mt-1.5 px-1 text-xs font-medium">
-                <span className="text-slate-400">Used for fast passwordless login</span>
-                <span className={phone.length === 10 ? 'text-emerald-600 font-bold' : 'text-slate-400'}>
-                  {phone.length}/10 digits
-                </span>
-              </div>
-            </div>
-
-            {/* Email Address */}
-            <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 block">Email Address (Optional)</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={isSaving}
-                  placeholder="name@example.com"
-                  className="w-full p-4 pl-12 bg-slate-50/50 border border-slate-200 rounded-2xl font-medium text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70 shadow-sm"
-                />
-              </div>
-            </div>
-
-            {/* Password Accordion */}
-            <div className="bg-slate-50/70 border border-slate-200/80 rounded-3xl p-5 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setShowPasswordSection(!showPasswordSection)}
-                className="w-full flex items-center justify-between text-left font-bold text-slate-900"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                    <Lock size={18} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">Security & Password</p>
-                    <p className="text-xs font-normal text-slate-400">
-                      {user?.hasPassword ? 'Change your account password' : 'Set a password for your account'}
-                    </p>
-                  </div>
-                </div>
-                {showPasswordSection ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
-              </button>
-
-              {showPasswordSection && (
-                <div className="mt-4 pt-4 border-t border-slate-200/60 flex flex-col gap-3 animate-in fade-in duration-200">
-                  {user?.hasPassword && (
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Current Password"
-                      className="w-full p-3.5 bg-white border border-slate-200 rounded-xl font-medium text-sm focus:border-indigo-500 outline-none"
-                    />
-                  )}
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="New Password (min 6 characters)"
-                    className="w-full p-3.5 bg-white border border-slate-200 rounded-xl font-medium text-sm focus:border-indigo-500 outline-none"
-                  />
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm New Password"
-                    className="w-full p-3.5 bg-white border border-slate-200 rounded-xl font-medium text-sm focus:border-indigo-500 outline-none"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold text-base sm:text-lg shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-            >
-              {isSaving ? 'Saving Changes...' : 'Save Profile'}
-            </button>
-          </form>
-        </div>
-      </div>
     </div>
   );
 }

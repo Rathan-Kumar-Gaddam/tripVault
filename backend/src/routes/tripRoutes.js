@@ -10,7 +10,8 @@ import {
   joinTrip,
   closeTrip,
   getTripPreview,
-  leaveTrip 
+  leaveTrip,
+  streamTripEvents 
 } from '../controllers/tripController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -19,6 +20,9 @@ const router = express.Router();
 router.route('/')
   .post(protect, createTrip)
   .get(protect, getUserTrips);
+
+router.route('/:tripId/events')
+  .get(streamTripEvents);
 
 router.route('/:tripId/preview')
   .get(getTripPreview);

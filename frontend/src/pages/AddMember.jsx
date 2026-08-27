@@ -1,18 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import useTripStore, { computeBilateralDebts } from '../store/useTripStore';
+import useTripStore from '../store/useTripStore';
 import { 
   ArrowLeft, 
   UserPlus, 
-  Phone, 
-  User, 
   Trash2, 
-  ShieldCheck, 
-  Users, 
   AlertTriangle,
-  X,
-  HandCoins,
-  LogOut
+  LogOut,
+  Share2,
+  Copy,
+  Check,
+  MessageCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
@@ -20,34 +18,57 @@ import { DashboardSkeleton } from '../components/SkeletonLoader';
 export default function AddMember() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, currentTrip, transactions, fetchTripDetails, addMember, removeMember, leaveTrip, isLoading } = useTripStore();
+  const { user, currentTrip, fetchTripDetails, addMember, removeMember, leaveTrip } = useTripStore();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // Member removal modal state
+  // Modals
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [isRemoving, setIsRemoving] = useState(false);
-
-  // Leave Trip modal state
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
   const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
+    let isMounted = true;
     if (!currentTrip || currentTrip._id !== id) {
-      setFetchError(null);
       fetchTripDetails(id).catch((err) => {
-        setFetchError(err.response?.data?.message || err.message || 'Failed to load trip members');
+        if (isMounted) {
+          setFetchError(err.response?.data?.message || err.message || 'Failed to load trip members');
+        }
       });
     }
-  }, [id]);
+    return () => {
+      isMounted = false;
+    };
+  }, [id, currentTrip, fetchTripDetails]);
 
-  const handlePhoneChange = (e) => {
-    const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
-    setPhone(raw);
+  const members = useMemo(() => currentTrip?.members || [], [currentTrip?.members]);
+  const myData = members.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
+  const isAdmin = (currentTrip?.createdBy?._id || currentTrip?.createdBy)?.toString() === user?._id?.toString() || myData?.role === 'admin';
+  const currency = currentTrip?.currency || '₹';
+
+  const inviteUrl = `${window.location.origin}/join/${id}`;
+
+  const handleCopyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      toast.success('Invite link copied to clipboard! 📋');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy link.');
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    const text = `Join our trip vault "${currentTrip?.name}" on TripVault to track shared expenses and balances: ${inviteUrl}`;
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   };
 
   const handleAddSubmit = async (e) => {
@@ -55,10 +76,10 @@ export default function AddMember() {
     if (isSubmitting) return;
 
     const trimmedName = name.trim();
-    const cleanPhone = phone.trim();
+    const cleanPhone = phone.trim().replace(/\D/g, '').slice(-10);
 
     if (!trimmedName) {
-      toast.error('Please enter friend\'s name.');
+      toast.error("Please enter friend's name.");
       return;
     }
 
@@ -85,7 +106,6 @@ export default function AddMember() {
 
   const handleConfirmRemove = async () => {
     if (!memberToRemove || isRemoving) return;
-
     const targetUid = memberToRemove.user?._id || memberToRemove.user;
     const targetName = memberToRemove.user?.name || 'Companion';
 
@@ -103,11 +123,10 @@ export default function AddMember() {
 
   const handleConfirmLeave = async () => {
     if (isLeaving) return;
-
     try {
       setIsLeaving(true);
       await leaveTrip(id);
-      toast.success('Successfully left the trip vault 🚪');
+      toast.success('You have left the trip vault.');
       navigate('/');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to leave trip.');
@@ -120,250 +139,201 @@ export default function AddMember() {
     return <DashboardSkeleton />;
   }
 
-  if (fetchError || !currentTrip) {
-    return (
-      <div className="p-6 sm:p-10 flex flex-col items-center justify-center min-h-[70vh] text-center">
-        <h2 className="text-xl font-bold text-slate-900 mb-2">{fetchError || 'Trip Not Found'}</h2>
-        <button
-          onClick={() => navigate('/')}
-          className="mt-4 px-6 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl"
-        >
-          ← Back to Trips
-        </button>
-      </div>
-    );
-  }
-
-  const currency = currentTrip?.currency || '₹';
-  const myMembership = currentTrip?.members?.find(m => (m.user?._id || m.user)?.toString() === user?._id?.toString());
-  const isAdmin = myMembership?.role === 'admin';
-
-  const { companionDebts } = computeBilateralDebts(currentTrip?.members, transactions, user?._id);
-
-  // Map companion debts by user ID
-  const debtMap = {};
-  companionDebts.forEach(d => {
-    const uid = (d.user?._id || d.user)?.toString();
-    if (uid) debtMap[uid] = d;
-  });
-
   return (
-    <div className="p-4 sm:p-6 md:p-8 lg:p-10 pb-24 sm:pb-20 relative">
-      {/* Header */}
-      <header className="flex justify-between items-center mb-6 sm:mb-8">
-        <button 
-          onClick={() => navigate(`/trip/${id}`)} 
-          className="p-3 bg-white border border-slate-200/80 rounded-2xl text-slate-600 hover:text-slate-900 shadow-sm active:scale-95 transition-transform"
+    <div className="p-4 sm:p-8 max-w-xl mx-auto space-y-6 pb-24 sm:pb-20 animate-in fade-in duration-200">
+      
+      {/* Top Bar */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+        <button
+          type="button"
+          onClick={() => navigate(`/trip/${id}`)}
+          className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={16} />
+          <span>Back to Vault</span>
         </button>
-        <div className="text-center">
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-heading">Trip Companions</h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            {currentTrip?.members?.length || 0} {(currentTrip?.members?.length === 1) ? 'Companion' : 'Companions'}
-          </p>
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+          {currentTrip?.name}
+        </span>
+      </div>
+
+      {/* Page Title */}
+      <div>
+        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight font-heading">
+          Trip Companions ({members.length})
+        </h1>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Manage trip members, individual balances, and invite friends
+        </p>
+      </div>
+
+      {/* Quick Invite Share Card */}
+      <div className="p-5 bg-white border border-slate-200/90 rounded-3xl shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Share2 size={16} className="text-indigo-600" />
+            <h3 className="text-xs font-bold text-slate-900">Invite Friends via Link</h3>
+          </div>
+          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">
+            1-Click Join
+          </span>
         </div>
-        <div className="w-10"></div>
-      </header>
 
-      {/* Main Content Grid (2 Columns on Desktop for Admin) */}
-      <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-12' : ''} gap-6 items-start`}>
-        
-        {/* Add New Member Section (Only for Admin) */}
-        {isAdmin && (
-          <section className="lg:col-span-5 bg-white p-6 rounded-[2.5rem] border border-slate-200/80 shadow-sm">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
-                <UserPlus size={20} />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">Invite New Companion</h2>
-                <p className="text-xs text-slate-400">Add by name and 10-digit mobile number</p>
-              </div>
-            </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleCopyInvite}
+            className="flex-1 py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            <span>{copied ? 'Link Copied!' : 'Copy Invite Link'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleWhatsAppShare}
+            className="py-2.5 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5"
+            title="Share on WhatsApp"
+          >
+            <MessageCircle size={15} />
+            <span>WhatsApp</span>
+          </button>
+        </div>
+      </div>
 
-            <form onSubmit={handleAddSubmit} className="flex flex-col gap-4">
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  type="text" 
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Friend's Full Name" 
-                  required 
-                  disabled={isSubmitting}
-                  className="w-full p-4 pl-11 rounded-2xl border border-slate-200 bg-slate-50/50 font-medium text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
-                />
-              </div>
-
-              <div>
-                <div className="relative">
-                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="tel" 
-                    value={phone}
-                    onChange={handlePhoneChange}
-                    maxLength={10}
-                    placeholder="10-digit Phone (e.g. 9845201587)" 
-                    required 
-                    disabled={isSubmitting}
-                    className="w-full p-4 pl-11 rounded-2xl border border-slate-200 bg-slate-50/50 font-medium tracking-wide text-sm focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-400 disabled:opacity-70" 
-                  />
-                </div>
-                <div className="flex justify-between items-center mt-1 px-1 text-xs font-medium">
-                  <span className="text-slate-400 text-[11px]">Can login immediately with phone</span>
-                  <span className={phone.length === 10 ? 'text-emerald-600 font-bold text-[11px]' : 'text-slate-400 text-[11px]'}>
-                    {phone.length}/10 digits
-                  </span>
-                </div>
-              </div>
-
-              <button 
-                type="submit" 
-                disabled={isSubmitting || phone.length !== 10 || !name.trim()}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold text-sm shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all mt-1 flex items-center justify-center gap-2"
-              >
-                <UserPlus size={18} />
-                {isSubmitting ? 'Adding Member...' : 'Add Member'}
-              </button>
-            </form>
-          </section>
-        )}
-
-        {/* Current Members List */}
-        <section className={isAdmin ? 'lg:col-span-7' : 'w-full'}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Users size={18} className="text-slate-400" />
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Trip Companions ({currentTrip?.members?.length || 0})
-              </h2>
-            </div>
+      {/* Add Companion Form (Admin Only) */}
+      {isAdmin && (
+        <form onSubmit={handleAddSubmit} className="p-5 bg-white border border-slate-200/90 rounded-3xl shadow-xs space-y-3.5">
+          <div className="flex items-center gap-2">
+            <UserPlus size={16} className="text-indigo-600" />
+            <h3 className="text-xs font-bold text-slate-900">Add Companion Directly</h3>
           </div>
 
-          <div className="flex flex-col gap-3">
-            {currentTrip?.members?.map((member) => {
-            const isMemberAdmin = member.role === 'admin';
-            const isSelf = (member.user?._id || member.user) === user?._id;
-            const mUser = member.user || member;
-            const uid = (mUser?._id || mUser)?.toString();
-            const p2p = debtMap[uid];
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Full Name"
+              required
+              className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 outline-none"
+            />
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              placeholder="10-digit Phone"
+              required
+              maxLength={10}
+              className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 outline-none"
+            />
+          </div>
 
-            return (
-              <div 
-                key={uid || member._id} 
-                className="bg-white p-4 rounded-3xl border border-gray-100/80 shadow-sm flex items-center justify-between gap-3 transition-all hover:border-gray-200"
-              >
-                {/* Avatar & Info */}
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white border-2 border-white shadow-sm flex items-center justify-center text-lg font-bold overflow-hidden shrink-0">
-                    {mUser?.avatar ? (
-                      <img src={mUser.avatar} alt={mUser.name} className="w-full h-full object-cover" />
-                    ) : (
-                      mUser?.name ? mUser.name.charAt(0).toUpperCase() : <User size={20} />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-gray-900 truncate text-sm">
-                        {mUser?.name} {isSelf ? '(You)' : ''}
-                      </p>
-                      {isMemberAdmin && (
-                        <span className="flex items-center gap-0.5 bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0">
-                          <ShieldCheck size={11} /> ADMIN
-                        </span>
-                      )}
-                    </div>
-                    
-                    {/* Bilateral status for non-self */}
-                    {!isSelf && p2p && (
-                      <p className={`text-xs font-bold mt-0.5 ${
-                        p2p.status === 'owes_you' ? 'text-emerald-600' : p2p.status === 'you_owe' ? 'text-rose-600' : 'text-gray-400'
-                      }`}>
-                        {p2p.status === 'owes_you' && `Owes you ${currency}${p2p.amount.toFixed(2)}`}
-                        {p2p.status === 'you_owe' && `You owe ${currency}${p2p.amount.toFixed(2)}`}
-                        {p2p.status === 'settled' && 'Settled up (₹0.00)'}
-                      </p>
-                    )}
-                  </div>
-                </div>
+          <button
+            type="submit"
+            disabled={isSubmitting || !name.trim() || phone.length !== 10}
+            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isSubmitting ? 'Adding...' : '+ Add Member to Vault'}
+          </button>
+        </form>
+      )}
 
-                {/* Settle Action & Remove Button */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {!isSelf && p2p && p2p.status !== 'settled' && (
-                    <button
-                      onClick={() => navigate(`/trip/${id}/add-money?mode=settle&with=${uid}&amount=${p2p.amount}`)}
-                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1"
-                      title="Settle up"
-                    >
-                      <HandCoins size={12} />
-                      <span>Settle</span>
-                    </button>
-                  )}
+      {/* Active Members List */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
+        {members.map((m) => {
+          const u = m.user || m;
+          const isMe = u._id === user?._id;
+          const balance = Math.round((m.balance || 0) * 100) / 100;
+          const isMemberAdmin = m.role === 'admin' || (currentTrip?.createdBy?._id || currentTrip?.createdBy)?.toString() === u._id?.toString();
 
-                  {/* Remove Button (Admin only, cannot remove self) */}
-                  {isAdmin && !isSelf && (
-                    <button
-                      onClick={() => setMemberToRemove(member)}
-                      title={`Remove ${mUser?.name}`}
-                      className="p-2.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl border border-transparent hover:border-rose-100 transition-all active:scale-95"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-
-                  {/* Leave Trip Button (for self) */}
-                  {isSelf && (
-                    <button
-                      onClick={() => setShowLeaveConfirm(true)}
-                      title="Leave Trip Vault"
-                      className="p-2.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-2xl border border-transparent hover:border-amber-100 transition-all active:scale-95"
-                    >
-                      <LogOut size={16} />
-                    </button>
+          return (
+            <div key={u._id} className="p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200/60 flex items-center justify-center font-bold text-xs text-slate-800 shrink-0">
+                  {u.avatar ? (
+                    <img src={u.avatar} alt={u.name} className="w-full h-full object-cover rounded-xl" />
+                  ) : (
+                    u.name?.charAt(0).toUpperCase()
                   )}
                 </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                      {u.name} {isMe ? '(You)' : ''}
+                    </p>
+                    {isMemberAdmin && (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-600">
+                        Admin
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                    {u.phone || u.email || 'Companion'}
+                  </p>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
-    </div>
 
-      {/* Delete / Remove Companion Confirmation Modal */}
-      {memberToRemove && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
-                <AlertTriangle size={24} />
+              <div className="flex items-center gap-3 shrink-0">
+                {balance > 0.01 ? (
+                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200/60">
+                    +{currency}{balance.toLocaleString()}
+                  </span>
+                ) : balance < -0.01 ? (
+                  <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200/60">
+                    -{currency}{Math.abs(balance).toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">
+                    Settled
+                  </span>
+                )}
+
+                {isAdmin && !isMe && (
+                  <button
+                    type="button"
+                    onClick={() => setMemberToRemove(m)}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                    title="Remove Member"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
-              <button 
-                onClick={() => setMemberToRemove(null)}
-                disabled={isRemoving}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-full"
-              >
-                <X size={20} />
-              </button>
             </div>
+          );
+        })}
+      </div>
 
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Remove Companion?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Are you sure you want to remove <strong>{memberToRemove.user?.name}</strong> from this trip?
+      {/* Leave Trip Trigger for non-admins */}
+      {!isAdmin && (
+        <div className="pt-2 text-center">
+          <button
+            type="button"
+            onClick={() => setShowLeaveConfirm(true)}
+            className="text-xs font-bold text-rose-600 hover:text-rose-700 flex items-center justify-center gap-1.5 mx-auto"
+          >
+            <LogOut size={14} />
+            <span>Leave This Trip Vault</span>
+          </button>
+        </div>
+      )}
+
+      {/* Remove Member Modal */}
+      {memberToRemove && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+              <AlertTriangle size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Remove Companion?</h3>
+            <p className="text-xs text-slate-500 mb-6">
+              Remove <strong>{memberToRemove.user?.name}</strong> from this vault? Any existing transaction history will be preserved.
             </p>
-
-            {Math.abs(memberToRemove.balance || 0) > 0.01 && (
-              <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 text-xs text-amber-800 font-medium mb-4">
-                ⚠️ <strong>Note:</strong> This member has an unsettled balance of <strong>{currentTrip?.currency || '₹'}{(memberToRemove.balance || 0).toFixed(2)}</strong>.
-              </div>
-            )}
-
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setMemberToRemove(null)}
-                disabled={isRemoving}
-                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-200 active:scale-95 transition-all"
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
               >
                 Cancel
               </button>
@@ -371,43 +341,31 @@ export default function AddMember() {
                 type="button"
                 onClick={handleConfirmRemove}
                 disabled={isRemoving}
-                className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl text-sm shadow-md shadow-rose-600/20 hover:bg-rose-700 active:scale-95 transition-all disabled:opacity-50"
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold disabled:opacity-50"
               >
-                {isRemoving ? 'Removing...' : 'Remove'}
+                {isRemoving ? 'Removing...' : 'Remove Member'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Leave Trip Confirmation Modal */}
+      {/* Leave Trip Modal */}
       {showLeaveConfirm && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl">
-                <LogOut size={24} />
-              </div>
-              <button 
-                onClick={() => setShowLeaveConfirm(false)}
-                disabled={isLeaving}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-full"
-              >
-                <X size={20} />
-              </button>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+              <LogOut size={24} />
             </div>
-
-            <h3 className="text-lg font-bold text-gray-900 mb-1 font-heading">Leave Trip Vault?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Are you sure you want to leave <strong>{currentTrip?.name}</strong>? You will no longer see this trip on your dashboard.
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Leave Trip Vault?</h3>
+            <p className="text-xs text-slate-500 mb-6">
+              You will no longer receive live balance updates for this trip.
             </p>
-
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowLeaveConfirm(false)}
-                disabled={isLeaving}
-                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-200 active:scale-95 transition-all"
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
               >
                 Cancel
               </button>
@@ -415,14 +373,15 @@ export default function AddMember() {
                 type="button"
                 onClick={handleConfirmLeave}
                 disabled={isLeaving}
-                className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-xl text-sm shadow-md shadow-amber-600/20 hover:bg-amber-700 active:scale-95 transition-all disabled:opacity-50"
+                className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold disabled:opacity-50"
               >
-                {isLeaving ? 'Leaving...' : 'Leave Vault'}
+                {isLeaving ? 'Leaving...' : 'Leave Trip'}
               </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

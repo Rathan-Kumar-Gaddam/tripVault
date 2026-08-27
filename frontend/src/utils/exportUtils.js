@@ -309,7 +309,6 @@ export const printTripReport = (trip, transactions = [], companionDebts = [], us
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   const budget = trip.budget || 0;
-  const remainingBudget = budget > 0 ? budget - totalSpent : null;
 
   // Individual user stats
   let myTotalShare = 0;

@@ -1,42 +1,54 @@
 /**
  * AI Category Predictor Engine for TripVault
- * Automatically suggests and maps expense descriptions to the most accurate category
+ * Automatically suggests and maps expense descriptions to the most accurate category in real time.
  */
+
+export const PRESET_CATEGORIES = [
+  { id: 'Food & Dining', label: 'Food & Dining', emoji: '🍕' },
+  { id: 'Transport & Fuel', label: 'Transport & Fuel', emoji: '🚕' },
+  { id: 'Stay & Hotels', label: 'Stay & Hotels', emoji: '🏨' },
+  { id: 'Flights & Transit', label: 'Flights & Transit', emoji: '✈️' },
+  { id: 'Activities & Fun', label: 'Activities & Fun', emoji: '🎟️' },
+  { id: 'Shopping', label: 'Shopping', emoji: '🛍️' },
+  { id: 'Sightseeing & Tours', label: 'Sightseeing', emoji: '📸' },
+  { id: 'Health & Medical', label: 'Health & Meds', emoji: '💊' },
+  { id: 'General', label: 'General', emoji: '📦' },
+];
 
 const CATEGORY_RULES = [
   {
     categoryId: 'Food & Dining',
+    label: 'Food & Dining',
+    emoji: '🍕',
     keywords: [
       'dinner', 'lunch', 'breakfast', 'brunch', 'meal', 'food', 'restaurant', 'cafe', 'bistro',
       'buffet', 'biryani', 'pizza', 'burger', 'pasta', 'noodles', 'sushi', 'taco', 'steak',
       'zomato', 'swiggy', 'dining', 'kitchen', 'mess', 'thali', 'dosa', 'roti', 'curry',
       'shawarma', 'sandwich', 'kfc', 'mcdonalds', 'dominos', 'bbq', 'barbeque', 'tandoor',
-      'dhaba', 'canteen', 'eatery', 'dessert', 'ice cream', 'gelato', 'bakery', 'waffle'
+      'dhaba', 'canteen', 'eatery', 'dessert', 'ice cream', 'gelato', 'bakery', 'waffle',
+      'coffee', 'starbucks', 'chai', 'tea', 'snack', 'snacks', 'juice', 'smoothie', 'shake',
+      'beer', 'wine', 'pub', 'bar', 'cocktail', 'cocktails', 'club', 'whiskey', 'vodka', 'drinks',
+      'alcohol', 'liquor', 'booze', 'party', 'lounge', 'shots', 'cider', 'champagne', 'chips'
     ],
     weight: 1.0,
   },
   {
     categoryId: 'Transport & Fuel',
+    label: 'Transport & Fuel',
+    emoji: '🚕',
     keywords: [
       'uber', 'ola', 'cab', 'taxi', 'auto', 'rickshaw', 'rapido', 'grab', 'lyft',
       'fuel', 'petrol', 'diesel', 'gas', 'gasoline', 'toll', 'toll gate', 'toll plaza',
       'parking', 'valet', 'metro', 'bus', 'train', 'irctc', 'fare', 'ride', 'rental',
       'scooty', 'scooter', 'bike rental', 'car rental', 'highway', 'ferry', 'boat', 'speedboat',
-      'fuel station', 'petrol bunk', 'mechanic', 'puncture', 'driver'
+      'fuel station', 'petrol bunk', 'mechanic', 'puncture', 'driver', 'transit'
     ],
     weight: 1.0,
   },
   {
-    categoryId: 'Flights & Transit',
-    keywords: [
-      'flight', 'airfare', 'plane', 'indigo', 'air india', 'vistara', 'spicejet', 'emirates',
-      'qatar', 'singapore airlines', 'boarding', 'airport', 'terminal', 'excess baggage',
-      'luggage', 'transit', 'runway', 'flight ticket', 'airline', 'visa', 'passport fee'
-    ],
-    weight: 1.2,
-  },
-  {
     categoryId: 'Stay & Hotels',
+    label: 'Stay & Hotels',
+    emoji: '🏨',
     keywords: [
       'hotel', 'resort', 'airbnb', 'stay', 'hostel', 'villa', 'homestay', 'lodge',
       'booking.com', 'agoda', 'makemytrip', 'room', 'suite', 'checkout', 'checkin',
@@ -46,27 +58,20 @@ const CATEGORY_RULES = [
     weight: 1.1,
   },
   {
-    categoryId: 'Nightlife & Drinks',
+    categoryId: 'Flights & Transit',
+    label: 'Flights & Transit',
+    emoji: '✈️',
     keywords: [
-      'beer', 'wine', 'pub', 'bar', 'cocktail', 'cocktails', 'club', 'clubbing', 'nightclub',
-      'brewery', 'microbrewery', 'tequila', 'vodka', 'whiskey', 'whisky', 'rum', 'gin',
-      'alcohol', 'liquor', 'booze', 'drinks', 'party', 'lounge', 'shots', 'disco', 'karaoke',
-      'entry cover', 'cover charge', 'cider', 'champagne', 'hookah', 'sheesha'
+      'flight', 'airfare', 'plane', 'indigo', 'air india', 'vistara', 'spicejet', 'emirates',
+      'qatar', 'singapore airlines', 'boarding', 'airport', 'terminal', 'excess baggage',
+      'luggage', 'flight ticket', 'airline', 'visa', 'passport'
     ],
-    weight: 1.1,
-  },
-  {
-    categoryId: 'Snacks & Drinks',
-    keywords: [
-      'coffee', 'starbucks', 'cafe coffee day', 'ccd', 'chai', 'tea', 'snack', 'snacks',
-      'juice', 'smoothie', 'shake', 'boba', 'bubble tea', 'water bottle', 'mineral water',
-      'chips', 'popcorn', 'cookies', 'pastry', 'croissant', 'coconut water', 'soda', 'coke',
-      'pepsi', 'red bull', 'energy drink', 'chocolates', 'donut', 'street food', 'samosa'
-    ],
-    weight: 0.9,
+    weight: 1.2,
   },
   {
     categoryId: 'Activities & Fun',
+    label: 'Activities & Fun',
+    emoji: '🎟️',
     keywords: [
       'scuba', 'scuba diving', 'diving', 'snorkeling', 'surfing', 'surf', 'safari', 'jungle safari',
       'museum', 'theme park', 'water park', 'amusement park', 'disneyland', 'universal studios',
@@ -78,17 +83,9 @@ const CATEGORY_RULES = [
     weight: 1.1,
   },
   {
-    categoryId: 'Sightseeing & Tours',
-    keywords: [
-      'guide', 'tour guide', 'tour', 'temple', 'palace', 'monument', 'fort', 'castle',
-      'waterfall', 'viewpoint', 'sunset point', 'sunrise point', 'island tour', 'sightseeing',
-      'boat tour', 'city tour', 'heritage', 'national park', 'aquarium', 'zoo', 'botanical garden',
-      'cable car', 'ropeway', 'ferris wheel'
-    ],
-    weight: 1.0,
-  },
-  {
     categoryId: 'Shopping',
+    label: 'Shopping',
+    emoji: '🛍️',
     keywords: [
       'shopping', 'mall', 'souvenir', 'souvenirs', 'clothes', 'clothing', 'shirt', 'dress',
       'shoes', 'sneakers', 'zara', 'h&m', 'uniqlo', 'market', 'night market', 'flea market',
@@ -99,7 +96,21 @@ const CATEGORY_RULES = [
     weight: 0.9,
   },
   {
+    categoryId: 'Sightseeing & Tours',
+    label: 'Sightseeing',
+    emoji: '📸',
+    keywords: [
+      'guide', 'tour guide', 'tour', 'temple', 'palace', 'monument', 'fort', 'castle',
+      'waterfall', 'viewpoint', 'sunset point', 'sunrise point', 'island tour', 'sightseeing',
+      'boat tour', 'city tour', 'heritage', 'national park', 'aquarium', 'zoo', 'botanical garden',
+      'cable car', 'ropeway', 'ferris wheel'
+    ],
+    weight: 1.0,
+  },
+  {
     categoryId: 'Health & Medical',
+    label: 'Health & Meds',
+    emoji: '💊',
     keywords: [
       'medicine', 'medicines', 'pharma', 'pharmacy', 'chemist', 'hospital', 'clinic',
       'doctor', 'bandaid', 'first aid', 'pills', 'tablet', 'tablets', 'sunscreen', 'sunblock',
@@ -111,12 +122,9 @@ const CATEGORY_RULES = [
 ];
 
 /**
- * Predicts the most relevant category from a given expense description
- * @param {string} text - User's expense description (e.g. "Dinner at beachfront shack")
- * @param {Array} customCategories - Optional list of user-created custom categories
- * @returns {{ categoryId: string, confidence: number, matchedKeyword: string, isCustom: boolean } | null}
+ * Returns full prediction object or null
  */
-export function predictCategoryFromDescription(text = '', customCategories = []) {
+export function predictCategoryObject(text = '', customCategories = []) {
   if (!text || typeof text !== 'string') return null;
 
   const normalized = text.toLowerCase().trim();
@@ -129,6 +137,8 @@ export function predictCategoryFromDescription(text = '', customCategories = [])
       if (catName && (normalized.includes(catName) || catName.includes(normalized))) {
         return {
           categoryId: customCat.id || customCat.label,
+          label: customCat.label || customCat.id,
+          emoji: customCat.emoji || '✨',
           confidence: 0.95,
           matchedKeyword: catName,
           isCustom: true,
@@ -161,6 +171,8 @@ export function predictCategoryFromDescription(text = '', customCategories = [])
         highestScore = matchScore;
         bestMatch = {
           categoryId: rule.categoryId,
+          label: rule.label,
+          emoji: rule.emoji,
           confidence: Math.min(0.99, Number(matchScore.toFixed(2))),
           matchedKeyword: kw,
           isCustom: false,
@@ -175,4 +187,12 @@ export function predictCategoryFromDescription(text = '', customCategories = [])
   }
 
   return null;
+}
+
+/**
+ * Predicts the most relevant category ID string from a given expense description
+ */
+export function predictCategoryFromDescription(text = '', customCategories = []) {
+  const result = predictCategoryObject(text, customCategories);
+  return result ? result.categoryId : null;
 }

@@ -11,12 +11,7 @@ import {
   HeartPulse, 
   Tag, 
   HandCoins, 
-  HelpCircle,
-  Fuel,
-  Compass,
-  Film,
-  Music,
-  Gift
+  HelpCircle
 } from 'lucide-react';
 
 export const COLOR_THEMES = [
