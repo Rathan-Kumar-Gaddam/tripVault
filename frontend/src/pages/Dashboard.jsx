@@ -954,10 +954,8 @@ export default function Dashboard() {
           transaction={selectedTx}
           onClose={() => setSelectedTx(null)}
           onDelete={async (txId) => {
-            sound.playDeleteSound();
             await deleteTransaction(txId, id);
             setSelectedTx(null);
-            toast.success('Expense removed');
           }}
           currency={currency}
           currentUser={user}

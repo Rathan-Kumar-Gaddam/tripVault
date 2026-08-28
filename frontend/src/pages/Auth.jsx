@@ -164,7 +164,7 @@ export default function Auth() {
         
         {/* Brand Header */}
         <div className="text-center mb-6 space-y-2">
-          <Logo size="lg" className="mx-auto" />
+          <Logo size="lg" className="mx-auto" onClick={() => navigate('/welcome')} />
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-heading">
             {isLogin ? 'Welcome Back' : 'Create Vault Account'}
           </h1>

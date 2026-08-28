@@ -4,6 +4,7 @@ export default function Logo({
   className = '',
   textClassName = '',
   dark = false,
+  onClick,
 }) {
   const sizeMap = {
     xs: { icon: 20, box: 'w-6 h-6 rounded-lg', text: 'text-sm' },
@@ -16,7 +17,10 @@ export default function Logo({
   const currentSize = sizeMap[size] || sizeMap.md;
 
   return (
-    <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
+    <div 
+      onClick={onClick}
+      className={`inline-flex items-center gap-2.5 select-none ${onClick ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''} ${className}`}
+    >
       {/* Dynamic Geometric Shield Vault & Compass SVG */}
       <div
         className={`${currentSize.box} bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 p-0.5 shadow-lg shadow-indigo-500/25 flex items-center justify-center relative overflow-hidden group transition-transform hover:scale-105 active:scale-95 shrink-0`}

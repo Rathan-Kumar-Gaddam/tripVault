@@ -11,6 +11,7 @@ import {
 import toast from 'react-hot-toast';
 
 import { getCategoryMeta } from '../utils/categoryUtils';
+import { sound } from '../utils/soundEffects';
 
 export default function TransactionDetailModal({ 
   transaction, 
@@ -56,10 +57,12 @@ export default function TransactionDetailModal({
   const handleDelete = async () => {
     try {
       setIsDeleting(true);
+      sound.playDeleteSound();
       await onDelete(transaction._id);
+      toast.success('Transaction deleted successfully 🗑️');
       onClose();
-    } catch {
-      toast.error('Failed to delete transaction.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to delete transaction.');
     } finally {
       setIsDeleting(false);
     }
